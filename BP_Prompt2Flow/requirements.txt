@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+requests
+pyjwt
+bcrypt==4.2.1
+bcrypt
+python-dotenv
+pydantic
+psycopg2-binary

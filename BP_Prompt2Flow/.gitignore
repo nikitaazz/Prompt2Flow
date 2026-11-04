@@ -1,0 +1,4 @@
+node_modules/
+process_catalog.db
+.env
+__pycache__/
