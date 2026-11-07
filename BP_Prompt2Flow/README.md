@@ -61,15 +61,32 @@
 
 ### Description review while typing
 
-A good process description follows five steps, ideally with the activities written as a numbered list:
+A process description has two parts:
 
-1. **Define the event that triggers the process** – addresses missing start conditions.
-2. **Identify the main activities and tasks** – addresses unstructured descriptions and insufficient detail.
-3. **Specify the responsible employees** – addresses missing roles.
-4. **Identify the resources and documents used** – helps distinguish activities from related information.
-5. **Define the expected outcome** – addresses unclear process completion.
+1. **A short overview in your own words** (1–3 sentences) – what the process is about, what starts it and what its result is.
+2. **A step-by-step description** as a numbered list – each step says who does what, with which documents or systems, and what happens at decisions.
 
-After a short pause in typing, the Groq API checks the description against these five steps (and whether it is a numbered list) and recommends what to add. The generator uses the triggering event and the expected outcome as the labels of the start and end nodes, and keeps resources and documents inside the activity names instead of turning them into separate steps. The review also lists the specific steps where it is unclear who performs them, and may ask up to three clarifying questions; the chosen answer is appended to the description as a `Clarification:` line. All AI features use the Groq API; set `GROQ_API_KEY` in `.env`.
+Example:
+
+```text
+When a customer orders goods on our website, the order is checked, packed and delivered.
+The process ends when the customer receives the goods.
+
+1. The sales clerk checks the order form in the CRM system.
+2. If the goods are in stock, the warehouse worker packs them; otherwise the sales clerk informs the customer and cancels the order.
+3. The warehouse worker prints the delivery note.
+4. The courier delivers the goods with the delivery note.
+```
+
+After a short pause in typing, the Groq API checks whether both parts are present and goes through the steps one by one: it marks each step it understands and, for an unclear step, says exactly what is missing (e.g. who performs it, or what happens if a condition is not met). It also checks that the description covers the five aspects of a good process description:
+
+1. **The event that triggers the process** – addresses missing start conditions.
+2. **The main activities and tasks** – addresses unstructured descriptions and insufficient detail.
+3. **The responsible employees** – addresses missing roles.
+4. **The resources and documents used** – helps distinguish activities from related information.
+5. **The expected outcome** – addresses unclear process completion.
+
+The generator uses the overview as context and the numbered steps as the activities; the triggering event and the expected outcome become the labels of the start and end nodes, and resources and documents stay inside the activity names instead of becoming separate steps. The review may also ask up to three clarifying questions; the chosen answer is appended to the description as a `Clarification:` line. All AI features use the Groq API; set `GROQ_API_KEY` in `.env`.
 
 The user interface and the generated diagrams are in English, even when the process is described in another language (e.g. Slovak).
 

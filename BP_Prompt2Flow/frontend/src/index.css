@@ -578,6 +578,9 @@ select.p2f-field { padding-right: 8px; cursor: pointer; }
 .p2f-advice[data-tone="diagram"] .p2f-advice__dot { background: var(--accent); }
 .p2f-advice__dot.is-busy { background: var(--warn); animation: p2f-pulse 1.1s ease-in-out infinite; }
 .p2f-advice__status { color: var(--faint); font-weight: 500; letter-spacing: 0; text-transform: none; }
+.p2f-advice__action { margin-left: auto; padding: 1px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font: inherit; font-weight: 500; letter-spacing: 0; text-transform: none; cursor: pointer; }
+.p2f-advice__action:hover { border-color: var(--accent); color: var(--accent); }
+.p2f-review.is-stale { opacity: .6; transition: opacity .2s ease; }
 .p2f-advice__body { white-space: pre-wrap; }
 .p2f-advice__muted { color: var(--muted); }
 
@@ -598,6 +601,18 @@ select.p2f-field { padding-right: 8px; cursor: pointer; }
 .p2f-guide__steps { display: grid; gap: 2px; margin: 0; padding-left: 18px; }
 .p2f-guide__steps strong { color: var(--ink); font-weight: 600; }
 
+/* Step-by-step understanding: one row per step of the description */
+.p2f-steps-check { display: grid; gap: 4px; margin-top: 2px; }
+.p2f-steps-check__title { display: flex; align-items: baseline; gap: 8px; color: var(--ink); font-weight: 600; }
+.p2f-steps-check__title span { color: var(--faint); font-weight: 400; }
+.p2f-steps-check__list { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; }
+.p2f-steps-check__list li { display: flex; align-items: flex-start; gap: 7px; }
+.p2f-steps-check__list li svg { flex: none; margin-top: 3px; }
+.p2f-steps-check__list li.is-ok { color: var(--ok); }
+.p2f-steps-check__list li.is-missing { color: var(--warn); }
+.p2f-steps-check__list strong { font-weight: 500; }
+.p2f-steps-check__issue { color: var(--muted); }
+
 /* AI questions about the process description */
 .p2f-questions { display: flex; flex-direction: column; gap: 8px; margin: 0 12px 12px; }
 .p2f-questions__title { display: flex; align-items: baseline; gap: 8px; color: var(--ink); font-size: 12px; font-weight: 600; }
@@ -605,6 +620,7 @@ select.p2f-field { padding-right: 8px; cursor: pointer; }
 .p2f-question { padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid #c98a3a; border-radius: 8px; background: var(--surface); }
 .p2f-question__head { display: flex; align-items: flex-start; gap: 10px; }
 .p2f-question__text { flex: 1; color: var(--ink); font-size: 13px; line-height: 1.45; }
+.p2f-question__target { display: block; margin-bottom: 2px; color: #a0661f; font-size: 11px; font-weight: 600; letter-spacing: .02em; }
 .p2f-question__skip { flex: none; padding: 0; border: 0; background: none; color: var(--faint); font-size: 11.5px; cursor: pointer; }
 .p2f-question__skip:hover { color: var(--ink-2); text-decoration: underline; }
 .p2f-question__options { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }

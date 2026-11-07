@@ -127,17 +127,29 @@ class ReviewOption(BaseModel):
 class ReviewQuestion(BaseModel):
     question: str
     options: List[ReviewOption] = []
+    target: str = ""          # which part of the structure it clarifies: "step:<n>", "trigger", "roles", "outcome", "resources"
+    target_label: str = ""    # human-readable form of the target, e.g. "Step 2 – Approve request"
+
+
+class StepCheck(BaseModel):
+    """The AI's verdict on one step of the step-by-step description."""
+    number: str = ""
+    text: str
+    clear: bool = True
+    issue: str = ""
 
 
 class PromptReviewResponse(BaseModel):
-    """Review of a process description along the five recommended description steps."""
+    """Review of a process description written as a short overview followed by a step-by-step description."""
     overall_review: str = ""
-    trigger_defined: bool = False          # 1. event that triggers the process
-    activities_identified: bool = False    # 2. main activities and tasks
-    roles_specified: bool = False          # 3. responsible employees
-    resources_identified: bool = False     # 4. resources and documents used
-    outcome_defined: bool = False          # 5. expected outcome
-    numbered_list: bool = False            # the description is written as a numbered list
+    overview_present: bool = False         # short description of the process in the user's own words
+    steps_listed: bool = False             # step-by-step description (numbered steps)
+    step_checks: List[StepCheck] = []      # is each step understandable to the AI?
+    trigger_defined: bool = False          # what starts the process
+    activities_identified: bool = False    # main activities and tasks
+    roles_specified: bool = False          # responsible employees
+    resources_identified: bool = False     # resources and documents used
+    outcome_defined: bool = False          # expected outcome
     actor_assignments_clear: bool = False
     unclear_tasks: List[str] = []
     suggestions: List[str] = []
@@ -467,10 +479,12 @@ Structure you must follow strictly:
   ]
 }}
 
-PROCEDURE – read the description along five steps:
-  (1) the event that triggers the process, (2) the main activities and tasks, (3) the responsible roles,
+PROCEDURE – the description usually has two parts:
+  - a SHORT OVERVIEW of the process in the user's own words: use it as context (what the process is about, what starts it, what its result is,
+    which roles take part), but do NOT turn overview sentences into extra steps;
+  - a STEP-BY-STEP DESCRIPTION (usually a numbered list): these are the activities – each numbered item is normally one activity, in that order.
+  While reading, look for: (1) the event that triggers the process, (2) the main activities and tasks, (3) the responsible roles,
   (4) the resources and documents used, (5) the expected outcome.
-  If the description is a numbered list, each numbered item is normally one activity, in that order.
 0. In "roles", list every role/actor stated in the description: "name" = the role in English, "source" = the same role copied
    word for word from the description (in its original language and form). Every "actor" below must be one of these English names.
 A. In "activities", list ALL activities from the description in the order in which they happen. Each activity separately – even when one sentence
@@ -1026,6 +1040,63 @@ DIAGRAM (steps in flow order):
                                     specialists=specialists, tools=tools[:12])
 
 
+REVIEW_ASPECTS = {  # target -> (review flag, label, suggestion when missing)
+    "trigger": ("trigger_defined", "Triggering event", "Add what triggers the process, e.g. \"The process starts when …\"."),
+    "roles": ("roles_specified", "Responsible roles", "Say who performs each step."),
+    "outcome": ("outcome_defined", "Expected outcome", "Add the expected outcome, e.g. \"The process ends when …\"."),
+    "resources": ("resources_identified", "Resources and documents", "Name the documents, forms or systems used in the steps."),
+}
+QUESTION_ASPECTS = ("trigger", "outcome", "roles")  # aspects worth a question; resources only get a tip
+
+
+def _structured_questions(raw_questions, review: dict) -> List[ReviewQuestion]:
+    """Keep only questions that clarify an unclear step or a missing aspect of the description structure."""
+    unclear_steps = {_ascii(s.number): s for s in review.get("step_checks", []) if not s.clear}
+    step_order = {key: i for i, key in enumerate(unclear_steps)}
+    accepted = {}
+    for q in raw_questions or []:
+        if not isinstance(q, dict) or not str(q.get("question") or "").strip():
+            continue
+        target = _ascii(q.get("target")).replace(" ", "")
+        if target.startswith("step:") and target[5:] in unclear_steps:
+            step = unclear_steps[target[5:]]
+            label = f"Step {step.number} – {step.text}"
+            priority = step_order[target[5:]]
+        elif target in QUESTION_ASPECTS and not review.get(REVIEW_ASPECTS[target][0]):
+            label = REVIEW_ASPECTS[target][1]
+            priority = 100 + QUESTION_ASPECTS.index(target)
+        else:
+            continue  # off-structure question
+        options = [ReviewOption(label=str(o["label"]).strip(), clarification=str(o.get("clarification") or o["label"]).strip())
+                   for o in (q.get("options") or []) if isinstance(o, dict) and str(o.get("label") or "").strip()]
+        if len(options) < 2 or target in accepted:
+            continue
+        accepted[target] = (priority, ReviewQuestion(question=str(q["question"]).strip(), options=options[:3],
+                                                     target=target, target_label=label))
+    if any(key.startswith("step:") for key in accepted):
+        accepted.pop("roles", None)  # the step questions already ask who performs the unclear steps
+    return [question for _, question in sorted(accepted.values(), key=lambda item: item[0])][:3]
+
+
+def _structural_suggestions(review: dict) -> List[str]:
+    """Tips derived only from the structure: missing parts first, then what the questions do not already cover."""
+    tips = []
+    if not review.get("overview_present"):
+        tips.append("Start with a short overview in your own words (1–3 sentences): what the process is about, what starts it and what its result is.")
+    if not review.get("steps_listed"):
+        tips.append("Describe the process step by step as a numbered list (1., 2., 3. …), one activity per step.")
+    asked = {q.target for q in review.get("questions", [])}
+    for step in review.get("step_checks", []):
+        if not step.clear and f"step:{_ascii(step.number)}" not in asked and step.issue:
+            tips.append(f"Step {step.number}: {step.issue}")
+    for target, (flag, _, tip) in REVIEW_ASPECTS.items():
+        if target == "roles" and any(key.startswith("step:") for key in asked):
+            continue  # the step questions already ask who performs the unclear steps
+        if not review.get(flag) and target not in asked:
+            tips.append(tip)
+    return tips[:3]
+
+
 @app.post("/review-prompt", response_model=PromptReviewResponse)
 def review_prompt(input: PromptReviewRequest) -> PromptReviewResponse:
     prompt = input.prompt.strip()
@@ -1035,97 +1106,87 @@ def review_prompt(input: PromptReviewRequest) -> PromptReviewResponse:
     review_instructions = """Review the business process description and return only one JSON object with the fields:
 {
   "overall_review": "short overall assessment in English",
+  "overview_present": true,
+  "steps_listed": true,
+  "step_checks": [
+    {"number": "1", "text": "short name of the step", "clear": true, "issue": ""},
+    {"number": "2", "text": "short name of the step", "clear": false, "issue": "It is not stated who checks the invoice."}
+  ],
   "trigger_defined": true,
   "activities_identified": true,
   "roles_specified": true,
   "resources_identified": false,
   "outcome_defined": false,
-  "numbered_list": false,
   "actor_assignments_clear": false,
   "unclear_tasks": ["a concrete step whose performer is unclear"],
-  "suggestions": ["a concrete recommendation for completing the description"],
   "activity_count": 0,
   "questions": [
-    {"question": "Who approves the invoice?", "options": [
-      {"label": "Manager", "clarification": "The manager approves the invoice."},
-      {"label": "Accountant", "clarification": "The accountant approves the invoice."}
+    {"target": "step:2", "question": "Who checks the invoice in step 2?", "options": [
+      {"label": "Manager", "clarification": "In step 2 the manager checks the invoice."},
+      {"label": "Accountant", "clarification": "In step 2 the accountant checks the invoice."}
     ]}
   ]
 }
 
-A good process description follows five steps. Judge the description against each of them:
-1. trigger_defined – the event that triggers the process is defined (prevents missing start conditions),
-   e.g. "The process starts when a customer submits an order".
-2. activities_identified – the main activities and tasks are identified as separate, concrete actions in a clear order
-   (prevents unstructured descriptions and insufficient detail).
-3. roles_specified – the responsible employees/roles are specified for the activities (prevents missing roles).
-4. resources_identified – the resources and documents used are named (e.g. invoice, order form, accounting system);
-   this helps to distinguish the activities themselves from related information.
-5. outcome_defined – the expected outcome / end state of the process is defined (prevents unclear process completion),
-   e.g. "The process ends when the invoice is paid".
-In addition, numbered_list – the activities are written as a numbered list (1., 2., 3. …), which is the recommended form.
+The description is expected to have this structure:
+  A. A SHORT OVERVIEW of the business process in the user's own words (1–3 sentences): what the process is about,
+     ideally what starts it and what its result is.
+  B. A STEP-BY-STEP DESCRIPTION: the steps of the process in order, preferably as a numbered list (1., 2., 3. …),
+     each step one activity – who does what, with which documents or resources, and what happens at decisions.
+
+Your main task is to check whether YOU understand each step well enough to draw it in a process diagram.
 
 Review rules:
-1. Mark each of the five steps true only if the description really covers it; do not guess.
-2. For each activity check whether the text makes it unambiguous who performs it (actor_assignments_clear). The unclear_tasks list may only contain
-   concrete unclear activities quoted or briefly named from the description. Do not invent actors.
-3. suggestions: at most 3 concrete, short recommendations, ordered by importance, each addressing one missing step above
-   (e.g. "Add what triggers the process, e.g. 'The process starts when …'"). If the activities are not a numbered list, recommend
-   rewriting them as a numbered list. Do not repeat what the description already contains.
-4. overall_review: 1–2 sentences. If the description is short or still being written, phrase it as an interim review. Be factual, brief and encouraging.
-5. Respond in English, keep people's names and do not judge grammar.
-6. activity_count: the number of separate activities in the description (several activities in one sentence count separately; a decision is an activity too).
-7. questions: at most 3 questions that would clarify the diagram the most – only if the description is genuinely ambiguous or a step above is missing
-   (what triggers the process, who performs an activity, what happens in an undescribed decision branch, what the expected outcome is).
-   If the description is clear and complete, return an empty list.
-   Give 2–3 options for each question; "clarification" is a full sentence that gets appended to the description, written in the same language as the description.
-   Take options primarily from roles and activities the description already contains. Do not ask about time, costs or things a "Clarification:" line has already answered."""
+1. overview_present: true only if there is a short overview of the process in the user's own words (separate from the steps).
+   steps_listed: true only if the process is described step by step in a clear order (a numbered list is preferred).
+2. step_checks: one item for EVERY step of the step-by-step description, in order ("number" = its number in the text, or the order if unnumbered;
+   "text" = a short name of the step). If there is no step-by-step part, split the text into its activities and check those.
+   A step is clear (clear = true) only if you know WHAT is done and WHO does it, and – if it is a decision – what happens in each case.
+   If a step is unclear, set clear = false and write in "issue" one short sentence saying exactly what is missing or ambiguous
+   (e.g. "It is not stated who approves the request.", "It is unclear what happens if the goods are not in stock.", "Two different activities are mixed in one step.").
+   Do not mark a step unclear because of missing time or cost.
+3. The five aspects – mark each true only if the description (overview or steps) really covers it; do not guess:
+   trigger_defined (what starts the process), activities_identified (concrete activities in a clear order), roles_specified (who performs the activities),
+   resources_identified (documents, forms, systems or tools used), outcome_defined (the expected result / how the process ends).
+4. actor_assignments_clear: true only if every step says who performs it. unclear_tasks: steps whose performer is unclear (quoted or briefly named). Do not invent actors.
+6. overall_review: 1–2 sentences on whether the description is understandable and what matters most. If the description is short or still
+   being written, phrase it as an interim review. Be factual, brief and encouraging.
+7. Respond in English, keep people's names and do not judge grammar.
+8. activity_count: the number of separate activities in the description (several activities in one step count separately; a decision is an activity too).
+9. questions – STRICTLY limited to the structure above. Ask a question ONLY for:
+   a) a step you marked clear = false: target "step:<number>", and the question asks exactly about that step's "issue"
+      (who performs it, or what happens in the undescribed case of a decision) – mention the step number in the question;
+   b) a missing aspect: target "trigger" (if trigger_defined is false), "outcome" (if outcome_defined is false),
+      or "roles" (if roles_specified is false and no step question already asks who performs a step).
+   Never ask about resources or documents. Priority: unclear steps first (in order), then trigger, outcome, roles.
+   At most 3 questions, one per target.
+   Do NOT ask anything else: no questions about time, duration, costs, frequency, volumes, exceptions or details the description does not mention,
+   IT systems beyond what a step needs, improvements, or anything a "Clarification:" line has already answered. If everything is clear, return an empty list.
+   Give 2–3 options for each question, taken from the roles, activities and documents the description already contains (do not invent new ones);
+   "clarification" is a full sentence that gets appended to the description, written in the same language as the description."""
 
-    if not GROQ_API_KEY or len(GROQ_API_KEY) < 10:
-        raise HTTPException(status_code=503, detail="Set GROQ_API_KEY in .env.")
-
+    # groq_json waits and retries once on a short Groq rate limit; low reasoning effort keeps the review fast
+    review = groq_json(review_instructions, prompt, max_tokens=3000, temperature=0.2, reasoning_effort="low")
     try:
-        response = requests.post(
-            GROQ_URL,
-            headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-            json={
-                "model": GROQ_MODEL,
-                "messages": [
-                    {"role": "system", "content": review_instructions},
-                    {"role": "user", "content": prompt},
-                ],
-                "max_completion_tokens": 1800,
-                "temperature": 0.2,
-                "response_format": {"type": "json_object"},
-                "reasoning_format": "hidden",
-            },
-            timeout=90,
-        )
-        response.raise_for_status()
-        choices = response.json().get("choices", [])
-        if not choices:
-            raise ValueError("Groq API returned no response.")
-        content = choices[0].get("message", {}).get("content", "")
-        review = json.loads(content)
-        # Questions are optional – skip invalid items rather than failing the whole review
-        questions = []
-        for q in review.get("questions") or []:
-            if not isinstance(q, dict) or not str(q.get("question") or "").strip():
+        step_checks = []
+        for item in review.get("step_checks") or []:
+            if not isinstance(item, dict) or not str(item.get("text") or "").strip():
                 continue
-            options = [ReviewOption(label=str(o["label"]).strip(), clarification=str(o.get("clarification") or o["label"]).strip())
-                       for o in (q.get("options") or []) if isinstance(o, dict) and str(o.get("label") or "").strip()]
-            questions.append(ReviewQuestion(question=str(q["question"]).strip(), options=options[:3]))
-        review["questions"] = questions[:3]
+            clear = item.get("clear") is not False and str(item.get("clear")).lower() != "false"
+            step_checks.append(StepCheck(number=str(item.get("number") or len(step_checks) + 1).strip(),
+                                         text=str(item["text"]).strip(), clear=clear,
+                                         issue="" if clear else str(item.get("issue") or "").strip()))
+        review["step_checks"] = step_checks[:30]
+        for flag in ("overview_present", "steps_listed", "trigger_defined", "activities_identified", "roles_specified",
+                     "resources_identified", "outcome_defined", "actor_assignments_clear"):
+            review[flag] = str(review.get(flag)).strip().lower() == "true"
+        review["questions"] = _structured_questions(review.get("questions"), review)
+        review["suggestions"] = _structural_suggestions(review)
         try:
             review["activity_count"] = max(0, int(review.get("activity_count") or 0))
         except (TypeError, ValueError):
             review["activity_count"] = 0
         return PromptReviewResponse.parse_obj(review)
-    except requests.exceptions.RequestException as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Groq API is unavailable: {exc.response.text[:400] if exc.response is not None else str(exc)[:160]}",
-        ) from exc
     except (ValueError, TypeError, AttributeError) as exc:
         raise HTTPException(
             status_code=502,

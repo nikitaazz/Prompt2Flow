@@ -118,22 +118,44 @@ const EmptyIllustration = () => (
   </svg>
 );
 
-// The five steps of a good process description – the AI review checks the description against them
-const DESCRIPTION_STEPS = [
-  { key: 'trigger_defined', label: 'Triggering event', hint: 'what starts the process' },
-  { key: 'activities_identified', label: 'Main activities', hint: 'the tasks, one per item, in order' },
-  { key: 'roles_specified', label: 'Responsible roles', hint: 'who performs each task' },
-  { key: 'resources_identified', label: 'Resources and documents', hint: 'forms, systems and documents used' },
-  { key: 'outcome_defined', label: 'Expected outcome', hint: 'how the process ends' },
+// A process description has two parts: a short overview in the user's own words and a step-by-step description.
+// The AI review checks the structure, whether it understands every step, and these aspects of the process.
+const DESCRIPTION_PARTS = [
+  { key: 'overview_present', label: 'Short overview', hint: 'in your own words, 1–3 sentences: what the process is about, what starts it and what its result is' },
+  { key: 'steps_listed', label: 'Step-by-step description', hint: 'numbered steps, each saying who does what, with which documents, and what happens at decisions' },
+];
+const DESCRIPTION_ASPECTS = [
+  { key: 'trigger_defined', label: 'Triggering event' },
+  { key: 'roles_specified', label: 'Responsible roles' },
+  { key: 'resources_identified', label: 'Resources and documents' },
+  { key: 'outcome_defined', label: 'Expected outcome' },
 ];
 const DESCRIPTION_EXAMPLE = [
-  'Describe the process as a numbered list, for example:',
-  'The process starts when a customer submits an order form.',
+  'Write a short overview first, then the steps, for example:',
+  '',
+  'When a customer orders goods on our website, the order is checked, packed and delivered. The process ends when the customer receives the goods.',
+  '',
   '1. The sales clerk checks the order form in the CRM system.',
-  '2. If the goods are in stock, the warehouse worker packs them; otherwise the sales clerk informs the customer.',
-  '3. The courier delivers the goods with the delivery note.',
-  'The process ends when the customer receives the goods.',
+  '2. If the goods are in stock, the warehouse worker packs them; otherwise the sales clerk informs the customer and cancels the order.',
+  '3. The warehouse worker prints the delivery note.',
+  '4. The courier delivers the goods with the delivery note.',
 ].join('\n');
+
+// Description review timing
+const REVIEW_PAUSE_MS = 2500;      // wait for a pause in typing
+const REVIEW_MIN_GAP_MS = 8000;    // at most one review request every 8 s
+const REVIEW_MIN_CHANGE = 8;       // ignore edits smaller than this many characters
+const REVIEW_TIMEOUT_MS = 60000;   // give up on a review after 60 s
+const normalizeForReview = (text) => (text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+// Number of characters that differ between two texts (everything between their common start and common end)
+const changedCharCount = (a, b) => {
+  let start = 0;
+  while (start < a.length && start < b.length && a[start] === b[start]) start += 1;
+  let endA = a.length;
+  let endB = b.length;
+  while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) { endA -= 1; endB -= 1; }
+  return Math.max(endA - start, endB - start);
+};
 
 const DURATION_UNITS = [
   { label: 'min',  toMin: 1       },
@@ -263,17 +285,17 @@ function InfoModal({ onClose }) {
           </p>
 
           <h3>Writing a good process description</h3>
-          <p>
-            Describe the process in five steps, ideally with the activities as a numbered list. The AI checks the
-            description against these steps while you type and tells you what is missing.
-          </p>
+          <p>Write the description in two parts:</p>
           <ol>
-            <li><strong>Define the event that triggers the process</strong> – avoids missing start conditions.</li>
-            <li><strong>Identify the main activities and tasks</strong> – avoids unstructured descriptions and insufficient detail.</li>
-            <li><strong>Specify the responsible employees</strong> – avoids missing roles.</li>
-            <li><strong>Identify the resources and documents used</strong> – helps distinguish activities from related information.</li>
-            <li><strong>Define the expected outcome</strong> – avoids unclear process completion.</li>
+            <li><strong>A short overview in your own words</strong> (1–3 sentences) – what the process is about, what starts it and what its result is.</li>
+            <li><strong>A step-by-step description</strong> as a numbered list – each step says who does what, with which documents or systems, and what happens at decisions.</li>
           </ol>
+          <p>
+            While you type, the AI checks whether both parts are there and goes through your steps one by one: it marks each step
+            it understands and, for an unclear step, says exactly what is missing (for example who performs it or what happens if a
+            condition is not met). It also checks that the triggering event, the responsible roles, the resources and documents used
+            and the expected outcome are described.
+          </p>
 
           <h3>Basic editing</h3>
           <p>
@@ -622,45 +644,75 @@ function App() {
   const [selectedCategory, setSelectedCategory] = useState(DEFAULT_CATEGORY);
   const [showInfoModal, setShowInfoModal] = useState(false);
 
+  // ── Description review: sent only after a pause in typing, not more often than every few seconds,
+  // never for tiny edits, and a running request is never cancelled (the next one waits for it) ──
+  const [reviewedText, setReviewedText] = useState('');
+  const [reviewNonce, setReviewNonce] = useState(0);
+  const reviewInFlightRef = useRef(false);
+  const reviewQueuedRef = useRef(false);
+  const reviewAbortRef = useRef(null);
+  const lastReviewSentAtRef = useRef(0);
+
+  const runPromptReview = async (prompt) => {
+    if (reviewInFlightRef.current) { reviewQueuedRef.current = true; return; }
+    reviewInFlightRef.current = true;
+    lastReviewSentAtRef.current = Date.now();
+    setReviewedText(prompt);
+    setPromptReviewStatus('loading');
+    setPromptReviewError('');
+    const controller = new AbortController();
+    reviewAbortRef.current = controller;
+    const timeoutId = setTimeout(() => controller.abort('timeout'), REVIEW_TIMEOUT_MS);
+    try {
+      const review = await reviewPromptWithAI(prompt, controller.signal);
+      setPromptReview(review);
+      // The step-range decision stays valid for later reviews; AI questions are new
+      setAnsweredQuestions((prev) => prev.filter((key) => key === 'range'));
+      setPromptReviewStatus('ready');
+    } catch (error) {
+      if (controller.signal.reason === 'cancelled') return;
+      setPromptReviewError(controller.signal.reason === 'timeout'
+        ? 'The review took too long. It will run again after your next change, or click Check now.'
+        : error.message);
+      setPromptReviewStatus('error');
+    } finally {
+      clearTimeout(timeoutId);
+      reviewInFlightRef.current = false;
+      if (reviewQueuedRef.current) { reviewQueuedRef.current = false; setReviewNonce((n) => n + 1); }
+    }
+  };
+
   useEffect(() => {
     if (composerMode !== 'create') {
+      reviewAbortRef.current?.abort('cancelled');
+      reviewQueuedRef.current = false;
       setPromptReview(null);
       setPromptReviewError('');
       setPromptReviewStatus('idle');
+      setReviewedText('');
       return undefined;
     }
 
     const prompt = promptText.trim();
     if (prompt.length < 30) {
-      setPromptReview(null);
-      setPromptReviewError('');
-      setPromptReviewStatus(prompt ? 'waiting' : 'idle');
+      if (!reviewInFlightRef.current) {
+        setPromptReview(null);
+        setPromptReviewError('');
+        setPromptReviewStatus(prompt ? 'waiting' : 'idle');
+      }
       return undefined;
     }
 
-    const controller = new AbortController();
-    setPromptReviewStatus('waiting');
-    setPromptReviewError('');
-    const timeoutId = setTimeout(async () => {
-      setPromptReviewStatus('loading');
-      try {
-        const review = await reviewPromptWithAI(prompt, controller.signal);
-        setPromptReview(review);
-        // The step-range decision stays valid for later reviews; AI questions are new
-        setAnsweredQuestions((prev) => prev.filter((key) => key === 'range'));
-        setPromptReviewStatus('ready');
-      } catch (error) {
-        if (error.name === 'AbortError') return;
-        setPromptReviewError(error.message);
-        setPromptReviewStatus('error');
-      }
-    }, 900);
+    // Skip edits that barely change the text (a typo, whitespace) compared with what was last checked
+    if (reviewedText && changedCharCount(normalizeForReview(prompt), normalizeForReview(reviewedText)) < REVIEW_MIN_CHANGE) return undefined;
+    if (!promptReview && !reviewInFlightRef.current) setPromptReviewStatus('waiting');
 
-    return () => {
-      clearTimeout(timeoutId);
-      controller.abort();
-    };
-  }, [promptText, composerMode]);
+    const delay = Math.max(REVIEW_PAUSE_MS, lastReviewSentAtRef.current + REVIEW_MIN_GAP_MS - Date.now());
+    const timeoutId = setTimeout(() => runPromptReview(prompt), delay);
+    return () => clearTimeout(timeoutId);
+  }, [promptText, composerMode, reviewNonce]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => () => reviewAbortRef.current?.abort('cancelled'), []);
 
   // ─── LINTER: automatic check of the diagram logic ───
   useEffect(() => {
@@ -2192,6 +2244,12 @@ function App() {
     { key: 'node', caption: 'Node' },
     { key: 'edge', caption: 'Edge' },
   ];
+  // Review status line: is the shown review up to date with the text?
+  const showPromptReviewStatus = adviceMode !== 'diagram' && composerMode === 'create' && promptText.trim().length >= 30;
+  const isPromptReviewStale = Boolean(reviewedText) && normalizeForReview(promptText) !== normalizeForReview(reviewedText);
+  const promptReviewStatusText = promptReviewStatus === 'loading' ? 'checking…'
+    : isPromptReviewStale && promptReview ? 'text changed – re-checks when you pause' : '';
+  const canCheckNow = promptReviewStatus !== 'loading' && (isPromptReviewStale || promptReviewStatus === 'error');
   const isAdviceBusy = adviceMode === 'diagram' ? isDiagramReviewLoading : composerMode === 'create' && promptReviewStatus === 'loading';
 
   // ── AI questions about the description: the answer is appended as "Clarification: …" (the step range changes directly) ──
@@ -2224,6 +2282,8 @@ function App() {
     }
     dismissAiQuestion(question.key);
   };
+  const stepChecks = promptReview?.step_checks || [];
+  const clearStepCount = stepChecks.filter((step) => step.clear).length;
   const createDisabled = isLoading || !promptText.trim() || !minNodes || !maxNodes;
   const copilotDisabled = isCopilotLoading || !copilotPrompt.trim() || taskNodes.length === 0;
 
@@ -2303,7 +2363,7 @@ function App() {
                   <div className="p2f-questions__title">AI questions<span>optional · the answer is added to the description</span></div>
                   {aiQuestions.map((q) => <div key={q.key} className="p2f-question">
                     <div className="p2f-question__head">
-                      <div className="p2f-question__text">{q.question}</div>
+                      <div className="p2f-question__text">{q.target_label && <span className="p2f-question__target">{q.target_label}</span>}{q.question}</div>
                       <button type="button" className="p2f-question__skip" onClick={() => dismissAiQuestion(q.key)}>Skip</button>
                     </div>
                     <div className="p2f-question__options">
@@ -2317,30 +2377,37 @@ function App() {
                 </div>}
 
                 <div className="p2f-advice" data-tone={adviceMode === 'diagram' ? 'diagram' : 'prompt'} aria-live="polite">
-                  <div className="p2f-advice__title"><span className={`p2f-advice__dot${isAdviceBusy ? ' is-busy' : ''}`} />{adviceMode === 'diagram' ? (composerMode === 'manage' ? 'AI suggestions for changing the diagram' : 'AI diagram review') : composerMode === 'manage' ? 'Diagram editing suggestions' : 'Tips for the process description'}{adviceMode === 'diagram' && isDiagramReviewLoading && <span className="p2f-advice__status">· analysing</span>}</div>
+                  <div className="p2f-advice__title"><span className={`p2f-advice__dot${isAdviceBusy ? ' is-busy' : ''}`} />{adviceMode === 'diagram' ? (composerMode === 'manage' ? 'AI suggestions for changing the diagram' : 'AI diagram review') : composerMode === 'manage' ? 'Diagram editing suggestions' : 'Tips for the process description'}{adviceMode === 'diagram' && isDiagramReviewLoading && <span className="p2f-advice__status">· analysing</span>}{showPromptReviewStatus && promptReviewStatusText && <span className="p2f-advice__status">· {promptReviewStatusText}</span>}{showPromptReviewStatus && canCheckNow && <button type="button" className="p2f-advice__action" onClick={() => runPromptReview(promptText.trim())}>Check now</button>}</div>
                   {adviceMode === 'diagram' ? <div className="p2f-advice__body">{isDiagramReviewLoading ? (composerMode === 'manage' ? 'The AI is looking for concrete ways to improve the diagram…' : 'Checking steps, decisions and ways to simplify the process…') : diagramReview || 'The diagram review is not available yet.'}</div> : composerMode === 'manage' ? <div className="p2f-advice__muted">Describe a concrete change to the existing diagram. The AI changes only the requested steps and keeps the rest of the process.</div> : <div className="p2f-advice__muted">
                     {(promptReviewStatus === 'idle' || promptReviewStatus === 'waiting') && <div className="p2f-guide">
-                      <div>Describe the process in five steps, ideally as a numbered list:</div>
+                      <div>Write the description in two parts:</div>
                       <ol className="p2f-guide__steps">
-                        {DESCRIPTION_STEPS.map((step) => <li key={step.key}><strong>{step.label}</strong> – {step.hint}</li>)}
+                        {DESCRIPTION_PARTS.map((part) => <li key={part.key}><strong>{part.label}</strong> – {part.hint}</li>)}
                       </ol>
+                      <div>The AI then checks whether it understands each step.</div>
                     </div>}
-                    {promptReviewStatus === 'loading' && 'Groq is reviewing the description…'}
-                    {promptReviewStatus === 'error' && promptReviewError}
-                    {promptReviewStatus === 'ready' && promptReview && <div className="p2f-review">
+                    {promptReviewStatus === 'loading' && !promptReview && 'Groq is reviewing the description…'}
+                    {promptReviewStatus === 'error' && <div className="p2f-review__note is-warn">{promptReviewError}</div>}
+                    {promptReviewStatus !== 'idle' && promptReviewStatus !== 'waiting' && promptReview && <div className={`p2f-review${isPromptReviewStale || promptReviewStatus === 'loading' ? ' is-stale' : ''}`}>
                       <div className="p2f-review__summary">{promptReview.overall_review}</div>
                       <ul className="p2f-checklist">
-                        {[
-                          ...DESCRIPTION_STEPS.map((step) => [step.key, step.label]),
-                          ['numbered_list', 'Written as a numbered list'],
-                        ].map(([key, label]) => {
+                        {[...DESCRIPTION_PARTS, ...DESCRIPTION_ASPECTS].map(({ key, label }) => {
                           const ok = Boolean(promptReview[key]);
                           return <li key={key} className={ok ? 'is-ok' : 'is-missing'}>
-                            {ok ? <Icons.Check /> : <Icons.Dash />}<span>{label}{ok ? '' : key === 'numbered_list' ? ' — recommended' : ' — missing'}</span>
+                            {ok ? <Icons.Check /> : <Icons.Dash />}<span>{label}{ok ? '' : ' — missing'}</span>
                           </li>;
                         })}
                       </ul>
-                      {promptReview.unclear_tasks?.length > 0 && <div className="p2f-review__note is-warn"><strong>Unclear tasks:</strong> {promptReview.unclear_tasks.join(' · ')}</div>}
+                      {stepChecks.length > 0 && <div className="p2f-steps-check">
+                        <div className="p2f-steps-check__title">How the AI understands your steps<span>{clearStepCount} of {stepChecks.length} clear</span></div>
+                        <ol className="p2f-steps-check__list">
+                          {stepChecks.map((step, index) => <li key={`${step.number}-${index}`} className={step.clear ? 'is-ok' : 'is-missing'}>
+                            {step.clear ? <Icons.Check /> : <Icons.Dash />}
+                            <span><strong>{step.number ? `${step.number}. ` : ''}{step.text}</strong>{!step.clear && step.issue && <span className="p2f-steps-check__issue"> — {step.issue}</span>}</span>
+                          </li>)}
+                        </ol>
+                      </div>}
+                      {!stepChecks.length && promptReview.unclear_tasks?.length > 0 && <div className="p2f-review__note is-warn"><strong>Unclear tasks:</strong> {promptReview.unclear_tasks.join(' · ')}</div>}
                       {promptReview.suggestions?.length > 0 && <div className="p2f-review__note"><strong>Tips:</strong> {promptReview.suggestions.slice(0, 3).join(' · ')}</div>}
                     </div>}
                   </div>}
