@@ -69,4 +69,4 @@ The full user guide is in [`BP_Prompt2Flow/README.md`](BP_Prompt2Flow/README.md)
 
 ## 👤 Author
 
-Bachelor's project by **Timotej Jakubov** ([@Timotej04](https://github.com/Timotej04)).
+Bachelor's project by **Mykyta Nosenko** and **Timotej Jakubov** ([@Timotej04](https://github.com/Timotej04)).
