@@ -437,6 +437,17 @@ GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = "openai/gpt-oss-120b"
 
 
+def groq_post(url: str, **kwargs) -> requests.Response:
+    """requests.post to Groq that waits and retries once when Groq reports a short rate limit (429, wait up to 12 s)."""
+    response = requests.post(url, **kwargs)
+    if response.status_code == 429:
+        wait = re.search(r"try again in ([\d.]+)s", response.text)
+        if wait and float(wait.group(1)) <= 12:
+            time.sleep(float(wait.group(1)) + 0.5)
+            response = requests.post(url, **kwargs)
+    return response
+
+
 def generate_diagram_from_text(description: str, min_nodes: int, max_nodes: int,
                                include_kpi: bool = False) -> ProcessModel:
     print(f"🎯 PROMPT: {description[:50]}... | Nodes: {min_nodes} - {max_nodes}")
@@ -488,19 +499,25 @@ PROCEDURE – the description usually has two parts:
 0. In "roles", list every role/actor stated in the description: "name" = the role in English, "source" = the same role copied
    word for word from the description (in its original language and form). Every "actor" below must be one of these English names.
 A. In "activities", list ALL activities from the description in the order in which they happen. Each activity separately – even when one sentence
-   contains several (e.g. "cuts the wood, glues and sands the board" = 3 activities). Do not omit or invent anything. Decisions ("approves or rejects", "if…") are activities too.
+   contains several (e.g. "cuts the wood, glues and sands the board" = 3 activities). Do not omit anything.
+   NEVER INVENT activities: every activity must be an action that a sentence of the description explicitly states (its verb is in the text).
+   Do not split an action into preparation sub-steps the text does not name (e.g. "submits a request" is ONE activity, not "creates" + "submits").
+   An explicit decision made by a role ("the manager approves or rejects the request") is an activity.
+   A mere CONDITION ("if the goods are in stock…", "if approved…", "otherwise…") is NOT an activity – it becomes a gateway (see B).
+   Do not add a "check whether …" activity for a condition unless the description explicitly says that someone checks it.
    Resources and documents (forms, invoices, systems, tools) are NOT activities on their own – mention them in the name of the activity
    that uses or produces them (e.g. "Fill in the order form"). The triggering event and the expected outcome are NOT activities either.
-B. Then create the nodes. EVERY activity from "activities" must be covered by a node of type "task" (field "covers" = the activity numbers "n").
+B. Then create the nodes. EVERY activity from "activities" must be covered by a node of type "task" (field "covers" = the activity numbers "n"),
+   and there must be NO task node that does not cover an activity.
    - If, according to the description, someone actively decides ("the manager approves or rejects"), that is a "task" (the decision-making) followed by a "gateway" with branches.
-   - If it is only a condition ("if the goods are not in stock…"), put a "gateway" right after the step that determines the condition – DO NOT ADD an extra "decision" task.
+   - If it is only a condition ("if the goods are in stock…"), put a "gateway" directly after the preceding activity – DO NOT ADD any extra "check" or "decision" task.
    - The gateway "label" is a concrete question taken from the context (e.g. "Are the goods in stock?"), never just "Decision?".
-C. The number of nodes of type "task" MUST be between {min_nodes} and {max_nodes} (set by the user):
+C. The user's step range is {min_nodes} to {max_nodes} task nodes. The MAXIMUM is binding, the MINIMUM is only a guide:
    - If there are more activities than {max_nodes}, merge activities performed by THE SAME role directly one after another (the node name must contain both, e.g. "Prepare and publish the job ad").
      Never drop an activity, even when merging. NEVER merge activities of different roles – each node has exactly one role (no "Lawyer/IT").
      Only if {max_nodes} cannot be met without merging different roles, exceed the maximum by as few nodes as possible.
-   - If there are fewer activities than {min_nodes}, split activities into their natural sub-steps that follow directly from the text
-     (e.g. "prepares and sends the contract" → 2 steps). DO NOT INVENT new activities that the description does not mention – rather create fewer nodes.
+   - If there are fewer activities than {min_nodes}, simply create fewer task nodes – one per activity. NEVER split, pad or add steps
+     to reach the minimum. A faithful diagram with fewer steps is always better than an invented step.
 
 ACCURACY (most important):
 - The diagram must faithfully match the description: the same activities, the same order, the same decision conditions. Add nothing, remove nothing.
@@ -535,7 +552,7 @@ Process description:
 """
 
     try:
-        resp = requests.post(
+        resp = groq_post(
             GROQ_URL,
             headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
             json={
@@ -1152,7 +1169,8 @@ Review rules:
 6. overall_review: 1–2 sentences on whether the description is understandable and what matters most. If the description is short or still
    being written, phrase it as an interim review. Be factual, brief and encouraging.
 7. Respond in English, keep people's names and do not judge grammar.
-8. activity_count: the number of separate activities in the description (several activities in one step count separately; a decision is an activity too).
+8. activity_count: the number of separate activities in the description (several activities in one step count separately; an explicit decision by a role
+   counts as an activity, a mere condition such as "if the goods are in stock" does not).
 9. questions – STRICTLY limited to the structure above. Ask a question ONLY for:
    a) a step you marked clear = false: target "step:<number>", and the question asks exactly about that step's "issue"
       (who performs it, or what happens in the undescribed case of a decision) – mention the step number in the question;
@@ -1448,7 +1466,7 @@ RULES FOR CARRYING OUT THE REQUEST PRECISELY:
 """
 
     try:
-        resp = requests.post(
+        resp = groq_post(
             GROQ_URL,
             headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
             json={
