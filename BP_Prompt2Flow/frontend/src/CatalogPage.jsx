@@ -2,29 +2,32 @@ import { useState, useEffect, useCallback } from 'react';
 
 const API = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
-const CATEGORIES = ['Financie',
-  'Hospodárstvo',
+const ALL_CATEGORIES = 'All';
+const DEFAULT_CATEGORY = 'Other';
+const CATEGORIES = [ALL_CATEGORIES,
+  'Finance',
+  'Economy',
   'HR',
   'IT',
   'Marketing',
-  'Operácie',
-  'Právo',
-  'Služby',
-  'Školstvo',
-  'Šport',
-  'Územné celky',
-  'Zákaznícky servis',
-  'Zdravotníctvo',
-  'Iné',];
+  'Operations',
+  'Law',
+  'Services',
+  'Education',
+  'Sport',
+  'Local government',
+  'Customer service',
+  'Healthcare',
+  DEFAULT_CATEGORY,];
 
 const CATEGORY_COLORS = {
   'HR':                 { bg: '#f8efdc', text: '#7a5212', border: '#ead6ad' },
   'IT':                 { bg: '#e7eef6', text: '#2d4f73', border: '#c8d7e8' },
-  'Financie':           { bg: '#e6f0eb', text: '#245c43', border: '#c4dccf' },
-  'Operácie':           { bg: '#efecf3', text: '#4f4366', border: '#d9d2e3' },
+  'Finance':            { bg: '#e6f0eb', text: '#245c43', border: '#c4dccf' },
+  'Operations':         { bg: '#efecf3', text: '#4f4366', border: '#d9d2e3' },
   'Marketing':          { bg: '#f6e9ed', text: '#7a3347', border: '#e8cfd6' },
-  'Zákaznícky servis':  { bg: '#f8ece2', text: '#7a3f1d', border: '#ebd1be' },
-  'Iné':                { bg: '#f1efe9', text: '#555b62', border: '#dedad0' },
+  'Customer service':   { bg: '#f8ece2', text: '#7a3f1d', border: '#ebd1be' },
+  [DEFAULT_CATEGORY]:   { bg: '#f1efe9', text: '#555b62', border: '#dedad0' },
 };
 
 const Icon = {
@@ -40,10 +43,10 @@ const Icon = {
 };
 
 const CategoryBadge = ({ category }) => {
-  const colors = CATEGORY_COLORS[category] || CATEGORY_COLORS['Iné'];
+  const colors = CATEGORY_COLORS[category] || CATEGORY_COLORS[DEFAULT_CATEGORY];
   return (
     <span className="p2f-badge" style={{ backgroundColor: colors.bg, color: colors.text, borderColor: colors.border }}>
-      {category || 'Iné'}
+      {category || DEFAULT_CATEGORY}
     </span>
   );
 };
@@ -52,7 +55,7 @@ export default function CatalogPage({ username, onLogout, onLoadModel, onClose }
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeCategory, setActiveCategory] = useState('Všetky');
+  const [activeCategory, setActiveCategory] = useState(ALL_CATEGORIES);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('all');
   const [deletingId, setDeletingId] = useState(null);
@@ -74,7 +77,7 @@ export default function CatalogPage({ username, onLogout, onLoadModel, onClose }
         : { 'Authorization': `Bearer ${token}` };
 
       const resp = await fetch(url, { headers });
-      if (!resp.ok) throw new Error('Načítanie zlyhalo');
+      if (!resp.ok) throw new Error('Loading failed');
       const data = await resp.json();
       setItems(data);
     } catch (e) {
@@ -86,7 +89,7 @@ export default function CatalogPage({ username, onLogout, onLoadModel, onClose }
   useEffect(() => { fetchItems(); }, [fetchItems]);
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Naozaj vymazať tento diagram?')) return;
+    if (!window.confirm('Do you really want to delete this diagram?')) return;
     setDeletingId(id);
     try {
       const token = localStorage.getItem('auth_token');
@@ -94,10 +97,10 @@ export default function CatalogPage({ username, onLogout, onLoadModel, onClose }
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (!resp.ok) throw new Error('Vymazanie zlyhalo');
+      if (!resp.ok) throw new Error('Deleting failed');
       setItems(prev => prev.filter(i => i.id !== id));
     } catch (e) {
-      alert('Vymazanie zlyhalo.');
+      alert('Deleting failed.');
     } finally {
       setDeletingId(null);
     }
@@ -117,7 +120,7 @@ export default function CatalogPage({ username, onLogout, onLoadModel, onClose }
         body: JSON.stringify({ is_public: newVisibility })
       });
 
-      if (!resp.ok) throw new Error('Zmena viditeľnosti zlyhala');
+      if (!resp.ok) throw new Error('Changing visibility failed');
 
       setItems(prev => prev.map(item =>
         item.id === id ? { ...item, is_public: newVisibility } : item
@@ -150,7 +153,7 @@ export default function CatalogPage({ username, onLogout, onLoadModel, onClose }
     onLoadModel(rawNodes, rawEdges, item.prompt || '');
   };
 
-    // Filtrovanie na strane klienta (vyhľadávanie + tab + kategória)
+    // Client-side filtering (search + tab + category)
   const filteredItems = items.filter(item => {
     const matchesSearch = !searchQuery ||
       item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -161,49 +164,49 @@ export default function CatalogPage({ username, onLogout, onLoadModel, onClose }
       activeTab === 'my' ? item.owner === username :
       activeTab === 'public' ? item.is_public : true;
 
-    const itemCategory = item.category || 'Iné';
-    const matchesCategory = activeCategory === 'Všetky' ? true : itemCategory === activeCategory;
+    const itemCategory = item.category || DEFAULT_CATEGORY;
+    const matchesCategory = activeCategory === ALL_CATEGORIES ? true : itemCategory === activeCategory;
 
     return matchesSearch && matchesTab && matchesCategory;
   });
 
   const formatDate = (dateStr) => {
     if (!dateStr) return '';
-    return new Date(dateStr).toLocaleDateString('sk-SK', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    return new Date(dateStr).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
   };
 
   return (
     <div className="p2f-catalog">
       <div className="p2f-catalog__inner">
 
-        {/* Hlavička */}
+        {/* Header */}
         <div className="p2f-catalog__intro">
           <h2 className="p2f-catalog__title">
-            Katalóg modelov
+            Model catalog
           </h2>
           <p className="p2f-catalog__meta">
-            {items.length} uložených diagramov · prihlásený ako <strong>{username}</strong>
+            {items.length} saved {items.length === 1 ? 'diagram' : 'diagrams'} · signed in as <strong>{username}</strong>
           </p>
         </div>
 
-        {/* Vyhľadávanie + Tab prepínač */}
+        {/* Search + tab switch */}
         <div className="p2f-catalog__controls">
           <label className="p2f-search">
             <Icon.Search />
             <input
               type="text"
-              placeholder="Hľadaj podľa názvu alebo popisu..."
+              placeholder="Search by name or description..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               className="p2f-field"
-              aria-label="Hľadať v katalógu"
+              aria-label="Search the catalog"
             />
           </label>
-          <div className="p2f-tabs" role="tablist" aria-label="Filter diagramov">
+          <div className="p2f-tabs" role="tablist" aria-label="Diagram filter">
             {[
-              { key: 'all', label: 'Všetky' },
-              { key: 'my', label: 'Moje' },
-              { key: 'public', label: 'Verejné' }
+              { key: 'all', label: 'All' },
+              { key: 'my', label: 'Mine' },
+              { key: 'public', label: 'Public' }
             ].map(tab => (
               <button key={tab.key} type="button" role="tab" aria-selected={activeTab === tab.key} className="p2f-tab" onClick={() => setActiveTab(tab.key)}>
                 {tab.label}
@@ -212,16 +215,16 @@ export default function CatalogPage({ username, onLogout, onLoadModel, onClose }
           </div>
         </div>
 
-        {/* Filtre podľa kategórie */}
+        {/* Category filters */}
         <div className="p2f-catalog__filters">
           {CATEGORIES.map(cat => {
             const isActive = activeCategory === cat;
             return (
               <button key={cat} type="button" aria-pressed={isActive} className={`p2f-filter${isActive ? ' is-active' : ''}`} onClick={() => setActiveCategory(cat)}>
                 {cat}
-                {cat !== 'Všetky' && (
+                {cat !== ALL_CATEGORIES && (
                   <span className="p2f-filter__count">
-                    {items.filter(i => (i.category || 'Iné') === cat).length}
+                    {items.filter(i => (i.category || DEFAULT_CATEGORY) === cat).length}
                   </span>
                 )}
               </button>
@@ -229,7 +232,7 @@ export default function CatalogPage({ username, onLogout, onLoadModel, onClose }
           })}
         </div>
 
-        {/* Obsah */}
+        {/* Content */}
         {loading ? (
         <div className="p2f-card-grid">
           {[1,2,3,4].map(i => (
@@ -243,18 +246,18 @@ export default function CatalogPage({ username, onLogout, onLoadModel, onClose }
       ) : error ? (
         <div className="p2f-state p2f-state--error">
           <Icon.Alert />
-          <h3>Chyba pri načítaní</h3>
+          <h3>Error while loading</h3>
           <p>{error}</p>
           <button type="button" onClick={fetchItems} className="p2f-btn p2f-btn--primary">
-            Skúsiť znova
+            Try again
           </button>
         </div>
       ) : filteredItems.length === 0 ? (
         <div className="p2f-state">
           <Icon.Folder />
-          <h3>Žiadne diagramy</h3>
+          <h3>No diagrams</h3>
           <p>
-            {searchQuery ? `Žiadny výsledok pre „${searchQuery}"` : 'V tejto kategórii nie sú žiadne uložené diagramy.'}
+            {searchQuery ? `No results for "${searchQuery}"` : 'There are no saved diagrams in this category.'}
           </p>
         </div>
       ) : (
@@ -264,29 +267,29 @@ export default function CatalogPage({ username, onLogout, onLoadModel, onClose }
 
             return (
               <article key={item.id} className="p2f-card">
-                {/* Hlavička karty */}
+                {/* Card header */}
                 <div className="p2f-card__head">
                   <h3 className="p2f-card__title">
                     {item.title}
                   </h3>
                   <div className="p2f-card__badges">
-                    <CategoryBadge category={item.category || 'Iné'} />
+                    <CategoryBadge category={item.category || DEFAULT_CATEGORY} />
 
-                    {/* Tlačidlo pre zmenu viditeľnosti */}
+                    {/* Visibility toggle */}
                     <button
                       type="button"
                       onClick={() => isOwner ? handleToggleVisibility(item.id, item.is_public) : null}
                       disabled={!isOwner}
-                      title={isOwner ? "Klikni pre zmenu viditeľnosti" : "Nemáš práva na zmenu"}
+                      title={isOwner ? "Click to change visibility" : "You are not allowed to change this"}
                       className={`p2f-visibility${item.is_public ? ' is-public' : ''}`}
                     >
                       {item.is_public ? <Icon.Globe /> : <Icon.Lock />}
-                      {item.is_public ? 'Verejný' : 'Súkromný'}
+                      {item.is_public ? 'Public' : 'Private'}
                     </button>
                   </div>
                 </div>
 
-                {/* Popis (prompt) */}
+                {/* Description (prompt) */}
                 {item.prompt && (
                   <p className="p2f-card__prompt">
                     {item.prompt}
@@ -295,18 +298,18 @@ export default function CatalogPage({ username, onLogout, onLoadModel, onClose }
 
                 {/* Meta info */}
                 <div className="p2f-card__meta">
-                  <span><Icon.Nodes /> {item.final_node_count} uzlov</span>
+                  <span><Icon.Nodes /> {item.final_node_count} {item.final_node_count === 1 ? 'node' : 'nodes'}</span>
                   <span><Icon.User /> {item.owner}</span>
                   <span><Icon.Calendar /> {formatDate(item.created_at)}</span>
                 </div>
 
-                {/* Akcie */}
+                {/* Actions */}
                 <div className="p2f-card__actions">
                   <button type="button" onClick={() => handleLoad(item)} className="p2f-btn p2f-btn--primary p2f-card__load">
-                    Načítať do editora
+                    Open in editor
                   </button>
                   {isOwner && (
-                    <button type="button" onClick={() => handleDelete(item.id)} disabled={deletingId === item.id} className="p2f-btn p2f-btn--danger" title="Vymazať diagram" aria-label="Vymazať diagram">
+                    <button type="button" onClick={() => handleDelete(item.id)} disabled={deletingId === item.id} className="p2f-btn p2f-btn--danger" title="Delete diagram" aria-label="Delete diagram">
                       {deletingId === item.id ? '...' : <Icon.Trash />}
                     </button>
                   )}

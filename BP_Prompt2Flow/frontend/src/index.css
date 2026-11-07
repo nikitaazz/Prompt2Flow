@@ -1,7 +1,7 @@
-/* ── Prompt2Flow – dizajnový systém ─────────────────────────────
-   Teplé "papierové" pozadie, tmavý atrament, jeden akcent (petrolej).
-   Komponenty sú pomenované p2f-*; React Flow uzly majú vlastné inline štýly,
-   aby sa správne exportovali do obrázka. */
+/* ── Prompt2Flow – design system ────────────────────────────────
+   Warm "paper" background, dark ink, a single accent (petrol).
+   Components are named p2f-*; React Flow nodes have their own inline styles
+   so they export correctly to an image. */
 
 :root {
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -68,7 +68,7 @@ body {
 }
 
 button, input, textarea, select { font: inherit; color: inherit; }
-/* Načítavame len rezy 400–600; tučné písmo preto mapujeme na 600 */
+/* Only weights 400–600 are loaded, so bold is mapped to 600 */
 strong, b, h1, h2, h3 { font-weight: 600; }
 button { -webkit-tap-highlight-color: transparent; }
 
@@ -94,7 +94,7 @@ kbd {
 
 .p2f-spacer { flex: 1; min-width: 0; }
 
-/* ── Tlačidlá ─────────────────────────────────────────────── */
+/* ── Buttons ──────────────────────────────────────────────── */
 
 .p2f-btn {
   display: inline-flex;
@@ -181,7 +181,7 @@ kbd {
   animation: p2f-spin .7s linear infinite;
 }
 
-/* ── Formulárové polia ────────────────────────────────────── */
+/* ── Form fields ──────────────────────────────────────────── */
 
 .p2f-field {
   width: 100%;
@@ -211,7 +211,7 @@ select.p2f-field { padding-right: 8px; cursor: pointer; }
   font-weight: 500;
 }
 
-/* ── Aplikácia a hlavička ─────────────────────────────────── */
+/* ── App and header ───────────────────────────────────────── */
 
 .p2f-app {
   width: 100%;
@@ -282,10 +282,10 @@ select.p2f-field { padding-right: 8px; cursor: pointer; }
   white-space: nowrap;
 }
 
-/* ── Plátno ───────────────────────────────────────────────── */
+/* ── Canvas ───────────────────────────────────────────────── */
 
 .p2f-main {
-  /* Výška spodného pruhu: plátno končí nad zbaleným chatom, takže ho neprekrýva. */
+  /* Height of the bottom bar: the canvas ends above the collapsed chat so it does not overlap it. */
   --dock-h: 76px;
   position: relative;
   flex: 1;
@@ -462,7 +462,7 @@ select.p2f-field { padding-right: 8px; cursor: pointer; }
 .p2f-empty__title { color: var(--ink); font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
 .p2f-empty__text { margin-top: 6px; color: var(--muted); font-size: 13px; }
 
-/* React Flow – jemné interakcie */
+/* React Flow – subtle interactions */
 .react-flow__attribution { background: transparent !important; }
 .react-flow__attribution a { color: var(--faint) !important; }
 .react-flow__edge-path { transition: stroke .15s ease; }
@@ -482,7 +482,7 @@ select.p2f-field { padding-right: 8px; cursor: pointer; }
 .react-flow__node.selected .p2f-handle,
 .react-flow__handle.p2f-handle.connecting { opacity: 1 !important; }
 
-/* ── AI chat (spodný pruh) ────────────────────────────────── */
+/* ── AI chat (bottom bar) ─────────────────────────────────── */
 
 .p2f-composer {
   position: absolute;
@@ -504,7 +504,7 @@ select.p2f-field { padding-right: 8px; cursor: pointer; }
 .p2f-composer.is-collapsed:hover { border-color: var(--line-3); box-shadow: var(--shadow-md); }
 .p2f-composer.is-expanded { border-color: var(--line-3); box-shadow: var(--shadow-lg); }
 
-/* Zásuvka sa rozbaľuje cez grid-template-rows (0fr → 1fr), takže animuje aj neznámu výšku. */
+/* The drawer expands via grid-template-rows (0fr → 1fr), so it animates an unknown height too. */
 .p2f-composer__drawer {
   display: grid;
   grid-template-rows: 0fr;
@@ -591,7 +591,7 @@ select.p2f-field { padding-right: 8px; cursor: pointer; }
 .p2f-checklist li.is-ok { color: var(--ok); }
 .p2f-checklist li.is-missing { color: var(--warn); }
 
-/* Otázky AI k opisu procesu */
+/* AI questions about the process description */
 .p2f-questions { display: flex; flex-direction: column; gap: 8px; margin: 0 12px 12px; }
 .p2f-questions__title { display: flex; align-items: baseline; gap: 8px; color: var(--ink); font-size: 12px; font-weight: 600; }
 .p2f-questions__title span { color: var(--faint); font-size: 11.5px; font-weight: 400; }
@@ -640,8 +640,8 @@ select.p2f-field { padding-right: 8px; cursor: pointer; }
 }
 .p2f-question__send:hover { background: var(--accent-soft); }
 
-/* Formulár: zbalený = jeden riadok, rozbalený = pole cez celú šírku + voľby pod ním.
-   Tlačidlo odoslania ostáva vpravo dole v oboch stavoch, aby klik "neutiekol". */
+/* Form: collapsed = one line, expanded = full-width field + options below it.
+   The submit button stays bottom right in both states so the click does not "run away". */
 .p2f-composer__form {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -678,8 +678,8 @@ select.p2f-field { padding-right: 8px; cursor: pointer; }
 .p2f-composer__mode::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 .p2f-composer.is-expanded .p2f-composer__mode { display: none; }
 
-/* Zbalené pole má výšku presne jedného riadku (bez vertikálneho paddingu),
-   aby nepresvitali ďalšie riadky dlhšieho textu. */
+/* The collapsed field is exactly one line high (no vertical padding)
+   so further lines of a longer text do not show through. */
 .p2f-composer__input {
   grid-area: input;
   display: block;
@@ -743,7 +743,7 @@ select.p2f-field { padding-right: 8px; cursor: pointer; }
 .p2f-composer__submit { grid-area: submit; height: 40px; padding: 0 16px; }
 .p2f-composer.is-expanded .p2f-composer__submit { align-self: end; }
 
-/* ── Bočný panel (doplnkové funkcie) ──────────────────────── */
+/* ── Side panel (more tools) ──────────────────────────────── */
 
 .p2f-sheet-backdrop {
   position: fixed;
@@ -805,7 +805,7 @@ select.p2f-field { padding-right: 8px; cursor: pointer; }
 .p2f-export:hover { border-color: var(--accent); background: var(--accent-soft); }
 .p2f-export:hover strong { color: var(--accent-ink); }
 
-/* ── Dialógy ──────────────────────────────────────────────── */
+/* ── Dialogs ──────────────────────────────────────────────── */
 
 .p2f-modal-backdrop, .p2f-overlay {
   position: fixed;
@@ -874,7 +874,7 @@ select.p2f-field { padding-right: 8px; cursor: pointer; }
 .p2f-dialog__title { margin: 0; color: var(--ink); font-size: 16px; font-weight: 600; }
 .p2f-dialog__sub { margin-top: 3px; color: var(--muted); font-size: 12px; }
 
-/* ── Štatistika procesu (report s kapitolami) ─────────────── */
+/* ── Process statistics (report with chapters) ────────────── */
 
 .p2f-report {
   width: min(1180px, calc(100vw - 32px));
@@ -1051,7 +1051,7 @@ select.p2f-field { padding-right: 8px; cursor: pointer; }
 
 .p2f-fineprint { margin: 0; color: var(--faint); font-size: 12px; line-height: 1.55; }
 
-/* Aktéri a zdroje */
+/* Actors and resources */
 .p2f-role-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
 .p2f-role { display: flex; flex-direction: column; gap: 12px; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .p2f-role__head { display: flex; align-items: center; gap: 12px; }
@@ -1089,7 +1089,7 @@ select.p2f-field { padding-right: 8px; cursor: pointer; }
 .p2f-tool-card__name { color: var(--ink); font-size: 14px; font-weight: 600; }
 .p2f-tool-card__purpose { margin: 0; color: var(--ink-2); font-size: 13px; line-height: 1.5; }
 
-/* AI odporúčania */
+/* AI recommendations */
 .p2f-ai-sections { display: flex; flex-direction: column; gap: 14px; }
 .p2f-ai-section__label { margin-bottom: 4px; color: var(--accent-ink); font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
 .p2f-ai-section__label::first-letter { text-transform: uppercase; }
@@ -1097,7 +1097,7 @@ select.p2f-field { padding-right: 8px; cursor: pointer; }
 .p2f-ai-section ul { margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 14px; line-height: 1.6; }
 .p2f-ai-section li + li { margin-top: 4px; }
 
-/* Zhoda so zadaním */
+/* Match with description */
 .p2f-match-hero {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -1184,7 +1184,7 @@ select.p2f-field { padding-right: 8px; cursor: pointer; }
   .p2f-report__toolbar { flex-direction: column; }
 }
 
-/* ── Prihlásenie ──────────────────────────────────────────── */
+/* ── Sign-in ──────────────────────────────────────────────── */
 
 .p2f-auth { width: min(380px, 100%); gap: 18px; padding: 30px 28px 24px; }
 .p2f-auth__close { position: absolute; top: 12px; right: 12px; }
@@ -1197,7 +1197,7 @@ select.p2f-field { padding-right: 8px; cursor: pointer; }
 .p2f-alert { padding: 10px 12px; border-radius: 8px; font-size: 13px; text-align: center; }
 .p2f-alert--error { border: 1px solid #ebc9c3; background: var(--danger-soft); color: var(--danger); }
 
-/* ── Katalóg ──────────────────────────────────────────────── */
+/* ── Catalog ──────────────────────────────────────────────── */
 
 .p2f-catalog-scroll { flex: 1; min-height: 0; overflow: auto; background: var(--bg); }
 .p2f-catalog { min-height: 100%; padding: 32px 24px 48px; }
@@ -1307,7 +1307,7 @@ select.p2f-field { padding-right: 8px; cursor: pointer; }
 ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: var(--line-2); background-clip: padding-box; }
 ::-webkit-scrollbar-thumb:hover { background: var(--line-3); background-clip: padding-box; }
 
-/* ── Animácie ─────────────────────────────────────────────── */
+/* ── Animations ───────────────────────────────────────────── */
 
 @keyframes p2f-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes p2f-fade-up { from { opacity: 0; transform: translate(-50%, calc(-50% + 8px)); } to { opacity: 1; transform: translate(-50%, -50%); } }

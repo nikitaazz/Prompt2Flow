@@ -27,7 +27,7 @@ const LANE_HEIGHT = 200;
 const LANE_HEADER_WIDTH = 140;
 const LANE_PADDING_X = 30;
 
-// Farby sú zladené s tokenmi v index.css (uzly a dráhy ich potrebujú inline kvôli exportu)
+// Colours match the tokens in index.css (nodes and lanes need them inline for the export)
 const COLORS = {
   sidebarBg: '#1c2024',
   sidebarCard: '#2a2f35',
@@ -41,23 +41,25 @@ const COLORS = {
   laneBorder: '#d6d2c8'
 };
 
-// ── VŠETKY KATEGÓRIE ──
+// ── ALL CATEGORIES ──
+const DEFAULT_CATEGORY = 'Other';
 const CATEGORIES = [
-  "Financie",
-  "Hospodárstvo",
+  "Finance",
+  "Economy",
   "HR",
   "IT",
   "Marketing",
-  "Právo",
-  "Služby",
-  "Školstvo",
-  "Šport",
-  "Územné celky",
-  "Zákaznícky servis",
-  "Zdravotníctvo",
-  "Operácie",
-  "Iné",
+  "Law",
+  "Services",
+  "Education",
+  "Sport",
+  "Local government",
+  "Customer service",
+  "Healthcare",
+  "Operations",
+  DEFAULT_CATEGORY,
 ];
+const NO_ROLE = 'No role';
 
 const Icons = {
   Generate: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>,
@@ -92,7 +94,7 @@ const Icons = {
   Dash: () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8"></circle><line x1="12" y1="8.5" x2="12" y2="12.5"></line><line x1="12" y1="15.5" x2="12.01" y2="15.5"></line></svg>,
 };
 
-// Značka: dva kroky procesu spojené hranou
+// Logo: two process steps connected by an edge
 const LogoMark = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <rect x="2.5" y="3.5" width="8" height="6.5" rx="1.6" stroke="currentColor" strokeWidth="2" />
@@ -118,14 +120,14 @@ const EmptyIllustration = () => (
 
 const DURATION_UNITS = [
   { label: 'min',  toMin: 1       },
-  { label: 'hod',  toMin: 60      },
-  { label: 'dni',  toMin: 1440     },
-  { label: 'týž',  toMin: 10080    },
-  { label: 'mes',  toMin: 40320   },
-  { label: 'r',    toMin: 483840  },
+  { label: 'h',    toMin: 60      },
+  { label: 'd',    toMin: 1440     },
+  { label: 'wk',   toMin: 10080    },
+  { label: 'mo',   toMin: 40320   },
+  { label: 'yr',   toMin: 483840  },
 ];
 
-// ── AppModal – nahradzuje window.prompt / confirm / alert ────────
+// ── AppModal – replaces window.prompt / confirm / alert ────────
 function AppModal({ config, onClose }) {
   const [value, setValue] = useState(config.defaultValue ?? '');
   const [durUnit, setDurUnit] = useState('min');
@@ -177,7 +179,6 @@ function AppModal({ config, onClose }) {
           </div>
         )}
 
-        {/* NOVÝ select typ */}
         {config.type === 'select' && (
           <select
             value={value}
@@ -194,7 +195,7 @@ function AppModal({ config, onClose }) {
           {config.type === 'alert' && <button className="p2f-btn p2f-btn--primary" onClick={() => onClose(true)}>OK</button>}
           {(config.type === 'prompt' || config.type === 'select') && (
               <>
-                <button className="p2f-btn" onClick={() => onClose(null)}>Zrušiť</button>
+                <button className="p2f-btn" onClick={() => onClose(null)}>Cancel</button>
                 <button className="p2f-btn p2f-btn--primary" onClick={() => {
                   if (config.type === 'duration') {
                     const num = parseFloat(value);
@@ -203,15 +204,15 @@ function AppModal({ config, onClose }) {
                   } else {
                     onClose(value);
                   }
-                }}>Potvrdiť
+                }}>Confirm
                 </button>
               </>
           )}
           {config.type === 'confirm' && (
               <>
-                <button className="p2f-btn" onClick={() => onClose(false)}>{config.cancelLabel || 'Nie'}</button>
+                <button className="p2f-btn" onClick={() => onClose(false)}>{config.cancelLabel || 'No'}</button>
                 <button className={`p2f-btn ${config.danger ? 'p2f-btn--solid-danger' : 'p2f-btn--primary'}`}
-                        onClick={() => onClose(true)}>{config.confirmLabel || 'Áno'}</button>
+                        onClick={() => onClose(true)}>{config.confirmLabel || 'Yes'}</button>
               </>
           )}
         </div>
@@ -224,55 +225,55 @@ function InfoModal({ onClose }) {
   return (
     <div className="p2f-modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="p2f-modal p2f-modal--wide" role="dialog" aria-modal="true" aria-labelledby="p2f-info-title">
-        <h2 id="p2f-info-title" className="p2f-modal__title p2f-modal__title--lg">O nástroji a návod na použitie</h2>
+        <h2 id="p2f-info-title" className="p2f-modal__title p2f-modal__title--lg">About the tool and user guide</h2>
 
         <div className="p2f-prose">
           <p>
-            Tento nástroj slúži na vizualizáciu a modelovanie biznis procesov. Na základe opisu procesu vám umelá
-            inteligencia vytvorí diagram s počtom uzlov vo vami zvolenom rozmedzí a následne ho môžete upravovať
-            manuálne alebo tiež pomocou AI. Diagramy procesov môžete ukladať do katalógu súkromne alebo verejne a
-            zároveň tam môžete nájsť verejné diagramy vytvorené inými ľuďmi.
+            This tool is for visualising and modelling business processes. Based on your process description, the AI
+            creates a diagram with a number of steps within the range you choose, which you can then edit manually or
+            with the help of AI. You can save process diagrams to the catalog privately or publicly, and you can also
+            find public diagrams created by other people there.
           </p>
 
           <p>
-            Tento nástroj je vytvorený v rámci bakalárskej práce. Autor je Timotej Jakubov.
+            This tool was created as part of a bachelor's thesis. The original author is Timotej Jakubov.
           </p>
 
-          <h3>Generovanie a úprava cez AI</h3>
+          <h3>Generating and editing with AI</h3>
           <p>
-            V hlavnom okne opíšte proces a kliknite na Vytvoriť diagram. Ak chcete upraviť existujúcu schému,
-            prepnite na kartu Správa diagramu, kde nájdete AI úpravy aj nástroje na prácu s uzlami.
+            Describe the process in the main window and click Create diagram. To change an existing diagram,
+            switch to the Manage diagram tab, where you will find AI editing as well as tools for working with nodes.
           </p>
 
-          <h3>Základné ovládanie úprav</h3>
+          <h3>Basic editing</h3>
           <p>
-            Na karte Správa diagramu môžete pridávať uzly, zarovnať ich a meniť ich názvy, roly aj KPI.
+            In the toolbar above the canvas you can add nodes, align them and change their names, roles and KPIs.
             <br/>
-            Ak chcete upravovať uzol, musíte najprv kliknutím na uzol, vybrať, ktorý chcete upraviť. Vybratý uzol môžete
-            odstrániť, alebo upraviť jeho názov, rolu alebo KPIs (trvanie a cena).
+            To edit a node, first click it to select it. You can then delete the selected node or change its name,
+            role or KPIs (duration and cost).
             <br/>
-            Ak chcete upraviť hranu, musíte na ňu najprv kliknúť a následne ju môžete vymazať alebo zmeniť text hrany.
+            To edit an edge, click it first; you can then delete it or change its text.
           </p>
 
-          <h3>Dráhy (Swimlanes)</h3>
+          <h3>Swimlanes</h3>
           <p>
-            Dráhy sa generujú automaticky podľa rolí priradených k jednotlivým krokom. Systém sám zaradí kroky s
-            rovnakou rolou do spoločnej dráhy a optimalizuje usporiadanie. Rolu zmeníte pravým kliknutím na
-            uzol &gt; Zmeniť rolu.
+            Lanes are generated automatically from the roles assigned to the steps. The system places steps with the
+            same role into a shared lane and optimises the layout. To change a role, select the node and click Role,
+            or click a lane header to rename the whole lane.
           </p>
-          <h3>Upozornenia</h3>
+          <h3>Notes</h3>
           <p>
-            Po zapnutí stránky sa môže stať, že prvý diagram sa bude generovať trocha dlhšie.
+            After the page is opened, the first diagram may take a little longer to generate.
             <br/>
-            V situácii, keď je aktívnych viacero používateľov naraz, môže sa vám zobraziť chybové hlásenie "Too Many
-            Requests", v takom prípade bude generovanie a úprava umelou inteligenciou nefunkčná niekoľko minút až hodinu.
+            When many users are active at the same time you may see a "Too Many Requests" error; in that case AI
+            generation and editing will not work for a few minutes up to an hour.
             <br/>
-            Po vytvorení účtu nie je možná zmena hesla.
+            The password cannot be changed after the account is created.
           </p>
         </div>
 
         <div className="p2f-modal__actions">
-          <button className="p2f-btn p2f-btn--primary" onClick={onClose}>Zavrieť</button>
+          <button className="p2f-btn p2f-btn--primary" onClick={onClose}>Close</button>
         </div>
       </div>
     </div>
@@ -282,21 +283,21 @@ function InfoModal({ onClose }) {
 function formatDuration(minutes) {
   if (minutes === null || minutes === undefined) return null;
   if (minutes < 60) return `${minutes} min`;
-  if (minutes < 1440) return `${(minutes / 60).toFixed(1).replace(/\.0$/, '')} hod`;   // < 8 hod
-  if (minutes < 10080) return `${(minutes / 1440).toFixed(1).replace(/\.0$/, '')} dni`;  // < 5 dní (8h/deň)
-  if (minutes < 40320) return `${(minutes / 10080).toFixed(1).replace(/\.0$/, '')} týž`; // < 4.2 týž
-  if (minutes < 483840) return `${(minutes / 40320).toFixed(1).replace(/\.0$/, '')} mes`; // < ~10 mes
-  return `${(minutes / 483840).toFixed(1).replace(/\.0$/, '')} r`;  // roky
+  if (minutes < 1440) return `${(minutes / 60).toFixed(1).replace(/\.0$/, '')} h`;
+  if (minutes < 10080) return `${(minutes / 1440).toFixed(1).replace(/\.0$/, '')} d`;
+  if (minutes < 40320) return `${(minutes / 10080).toFixed(1).replace(/\.0$/, '')} wk`;
+  if (minutes < 483840) return `${(minutes / 40320).toFixed(1).replace(/\.0$/, '')} mo`;
+  return `${(minutes / 483840).toFixed(1).replace(/\.0$/, '')} yr`;
 }
 
-// Malé ikony pre KPI v uzle (namiesto emoji, aby sa rovnako vykreslili aj v exporte)
+// Small KPI icons in a node (instead of emoji so they render the same in the export)
 const KpiIcons = {
   Clock: () => <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15.5 14"></polyline></svg>,
   Euro: () => <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6.6A7 7 0 1 0 18 17.4"></path><line x1="4" y1="10" x2="13" y2="10"></line><line x1="4" y1="14" x2="13" y2="14"></line></svg>,
 };
 const kpiItemStyle = { display: 'inline-flex', alignItems: 'center', gap: '3px' };
 
-// ── POČIATOČNÝ A KONCOVÝ UZOL (UML: plný kruh / kruh s bodkou) ──
+// ── START AND END NODES (UML: filled circle / circle with a dot) ──
 const isStartEventNode = (node) => node?.data?.nodeType === 'startEvent';
 const isEndEventNode = (node) => node?.data?.nodeType === 'endEvent';
 const isEventNode = (node) => isStartEventNode(node) || isEndEventNode(node);
@@ -318,14 +319,14 @@ const EventNode = ({ data, selected }) => {
           </>}
       </svg>
       <div style={{ position: 'absolute', top: EVENT_SIZE + 5, left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', fontSize: '10.5px', fontWeight: 500, color: isInvalid ? '#8f2a21' : '#6f757d', pointerEvents: 'none' }}>
-        {data.baseLabel || (isStart ? 'Začiatok' : 'Koniec')}
+        {data.baseLabel || (isStart ? 'Start' : 'End')}
       </div>
       {isStart && <Handle type="source" position={Position.Right} className="p2f-handle" style={{ opacity: 0, width: 10, height: 10, right: -5 }} />}
     </div>
   );
 };
 
-// ── VLASTNÝ KOMPONENT PRE UZOL ─────────────────────────────
+// ── CUSTOM NODE COMPONENT ─────────────────────────────────
 const TaskNode = ({ data, selected }) => {
   if (data.nodeType === 'startEvent' || data.nodeType === 'endEvent') return <EventNode data={data} selected={selected} />;
   const isDecision = data.isDecision === true;
@@ -358,10 +359,10 @@ const TaskNode = ({ data, selected }) => {
         {hasKpi && (
           <div style={{ display: 'flex', gap: '8px', fontSize: '10px', color: '#454b53', background: '#f3f2ee', padding: '2px 7px', borderRadius: '4px', border: '1px solid #e4e1d9', lineHeight: 1.4, flexWrap: 'wrap', justifyContent: 'center', fontVariantNumeric: 'tabular-nums' }}>
             {data.durationMinutes != null
-              ? <span title="Odhadovaný čas" style={kpiItemStyle}><KpiIcons.Clock /> {formatDuration(data.durationMinutes)}</span>
+              ? <span title="Estimated time" style={kpiItemStyle}><KpiIcons.Clock /> {formatDuration(data.durationMinutes)}</span>
               : null}
             {data.costEuros != null ? (
-              <span title="Odhadované náklady" style={kpiItemStyle}><KpiIcons.Euro /> {Number.isInteger(data.costEuros) ? data.costEuros : data.costEuros.toFixed(2)} EUR</span>
+              <span title="Estimated cost" style={kpiItemStyle}><KpiIcons.Euro /> {Number.isInteger(data.costEuros) ? data.costEuros : data.costEuros.toFixed(2)} EUR</span>
             ) : null}
           </div>
         )}
@@ -378,8 +379,8 @@ const SwimlaneNode = ({ data }) => {
   const isEven = data.index % 2 === 0;
   return (
     <div style={{ width: '100%', height: '100%', borderBottom: `1px solid ${COLORS.laneBorder}`, borderLeft: `1px solid ${COLORS.laneBorder}`, borderRight: `1px solid ${COLORS.laneBorder}`, borderTop: data.isFirst ? `1px solid ${COLORS.laneBorder}` : 'none', display: 'flex', position: 'relative', backgroundColor: isEven ? 'rgba(28, 32, 36, 0.025)' : 'rgba(255, 255, 255, 0.55)', zIndex: -2, boxSizing: 'border-box' }}>
-      {/* Hlavička dráhy je klikateľná (premenovanie roly); nodrag/nopan, aby neťahala plátno */}
-      <div className="p2f-lane-head nodrag nopan" role="button" tabIndex={0} title="Klikni pre premenovanie dráhy"
+      {/* The lane header is clickable (renames the role); nodrag/nopan so it does not drag the canvas */}
+      <div className="p2f-lane-head nodrag nopan" role="button" tabIndex={0} title="Click to rename the lane"
         onClick={() => data.onRename?.(data.actor)}
         onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); data.onRename?.(data.actor); } }}
         style={{ position: 'absolute', left: -20, top: '50%', transform: 'translateY(-50%)', width: LANE_HEADER_WIDTH, backgroundColor: '#ffffff', color: '#1c2024', fontWeight: '600', fontSize: '13px', padding: '11px 10px', textAlign: 'center', borderRadius: '7px', border: '1px solid #e4e1d9', borderLeft: `3px solid ${COLORS.accent}`, boxShadow: '0 1px 2px rgba(28,32,36,.06)', zIndex: 1, pointerEvents: 'all', cursor: 'pointer' }}>
@@ -396,8 +397,9 @@ const nodeTypes = { swimlane: SwimlaneNode, task: TaskNode };
 const makeLabel = (baseLabel, actor, showActors) => actor && showActors ? `${baseLabel} \n(${actor})` : baseLabel;
 const stripLaneProps = (nodes) => nodes.filter((n) => n.type !== 'swimlane').map((n) => ({ ...n, parentNode: undefined, extent: undefined, position: { x: 0, y: 0 } }));
 
-// Každý diagram má práve jeden počiatočný a jeden koncový uzol. Ak chýbajú, doplníme ich
-// a napojíme na kroky bez vstupu / bez výstupu. Staršie diagramy s textovým "Začiatok"/"Koniec" prevedieme.
+// Every diagram has exactly one start and one end node. If they are missing, they are added and
+// connected to the steps without an input / output. Older diagrams with a text "Start"/"End" node
+// (including the Slovak "Začiatok"/"Koniec" from earlier versions) are converted.
 function withStartEnd(taskList, edgeList, edgeDefaults) {
   const hasIn = (id, list) => list.some((e) => e.target === id);
   const hasOut = (id, list) => list.some((e) => e.source === id);
@@ -408,8 +410,8 @@ function withStartEnd(taskList, edgeList, edgeDefaults) {
     if (candidate) nodesOut = nodesOut.map((n) => n.id === candidate.id ? { ...n, data: { ...n.data, nodeType, isDecision: false, durationMinutes: null, costEuros: null } } : n);
   };
   const labelOf = (n) => (n.data?.baseLabel || '').trim().toLowerCase();
-  convert('startEvent', (n) => !isEventNode(n) && (n.id === 'start' || labelOf(n).startsWith('začiatok')) && !hasIn(n.id, edgeList));
-  convert('endEvent', (n) => !isEventNode(n) && (n.id === 'end' || labelOf(n).startsWith('koniec')) && !hasOut(n.id, edgeList));
+  convert('startEvent', (n) => !isEventNode(n) && (n.id === 'start' || /^(start|začiatok)/.test(labelOf(n))) && !hasIn(n.id, edgeList));
+  convert('endEvent', (n) => !isEventNode(n) && (n.id === 'end' || /^(end|koniec)/.test(labelOf(n))) && !hasOut(n.id, edgeList));
 
   const edgesOut = [...edgeList];
   const work = nodesOut.filter((n) => !isEventNode(n));
@@ -425,24 +427,24 @@ function withStartEnd(taskList, edgeList, edgeDefaults) {
   if (!nodesOut.some(isStartEventNode)) {
     const id = freeId('start');
     const entries = work.filter((n) => !hasIn(n.id, edgesOut));
-    nodesOut = [makeEvent(id, 'startEvent', 'Začiatok'), ...nodesOut];
+    nodesOut = [makeEvent(id, 'startEvent', 'Start'), ...nodesOut];
     (entries.length ? entries : [work[0]]).forEach((n) => edgesOut.push(link(id, n.id)));
   }
   if (!nodesOut.some(isEndEventNode)) {
     const id = freeId('end');
     const exits = work.filter((n) => !hasOut(n.id, edgesOut));
-    nodesOut = [...nodesOut, makeEvent(id, 'endEvent', 'Koniec')];
+    nodesOut = [...nodesOut, makeEvent(id, 'endEvent', 'End')];
     (exits.length ? exits : [work[work.length - 1]]).forEach((n) => edgesOut.push(link(n.id, id)));
   }
   return { nodes: nodesOut, edges: edgesOut };
 }
 
-// Model pre backend (AI kontrola, štatistika) – bez pozícií a vizuálnych vlastností
+// Model for the backend (AI review, statistics) – without positions and visual properties
 const serializeModel = (taskList, edgeList) => ({
   nodes: taskList.map((n) => ({ id: n.id, type: n.data.nodeType || 'task', label: n.data.baseLabel || n.data.label, actor: n.data.actor || null, duration_minutes: n.data.durationMinutes ?? null, cost_euros: n.data.costEuros ?? null })),
   edges: edgeList.map((e) => ({ id: e.id, source: e.source, target: e.target, label: e.label || null })),
 });
-// Podpis štruktúry (bez KPI) – podľa neho vieme, či je porovnanie so zadaním zastarané
+// Structure signature (without KPIs) – tells whether the comparison with the description is stale
 const structureSignatureOf = (taskList, edgeList) => JSON.stringify({
   n: taskList.map((n) => [n.id, n.data.baseLabel || n.data.label, n.data.actor || '', n.data.nodeType || 'task']),
   e: edgeList.map((e) => [e.source, e.target, e.label || '']),
@@ -454,7 +456,7 @@ async function editDiagramFromText(instruction, currentModel) {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ instruction, current_model: currentModel }),
   });
-  if (!response.ok) throw new Error('AI API zlyhalo pri úprave');
+  if (!response.ok) throw new Error('AI API failed while editing');
   return response.json();
 }
 
@@ -463,7 +465,7 @@ async function generateDiagramFromText(description, minNodes, maxNodes, includeK
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ description, min_nodes: parseInt(minNodes, 10), max_nodes: parseInt(maxNodes, 10), include_kpi: includeKpi }),
   });
-  if (!response.ok) throw new Error('AI API zlyhalo');
+  if (!response.ok) throw new Error('AI API failed');
   return response.json();
 }
 
@@ -474,7 +476,7 @@ async function evaluateGeneratedDiagram(description, model) {
     body: JSON.stringify({ description, model }),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.detail || `Semantické porovnanie zlyhalo (${response.status})`);
+  if (!response.ok) throw new Error(data.detail || `Semantic comparison failed (${response.status})`);
   return data;
 }
 
@@ -485,7 +487,7 @@ async function fetchProcessResources(description, model) {
     body: JSON.stringify({ description, model }),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.detail || `Analýza zdrojov zlyhala (${response.status})`);
+  if (!response.ok) throw new Error(data.detail || `Resource analysis failed (${response.status})`);
   return data;
 }
 
@@ -497,7 +499,7 @@ async function reviewPromptWithAI(prompt, signal) {
     signal,
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.detail || `Kontrola AI zlyhala (${response.status})`);
+  if (!response.ok) throw new Error(data.detail || `AI review failed (${response.status})`);
   return data;
 }
 
@@ -508,14 +510,14 @@ async function requestAssistantReply(messages, processDescription, currentModel)
     body: JSON.stringify({ messages, process_description: processDescription, current_model: currentModel }),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.detail || `Asistent AI zlyhal (${response.status})`);
+  if (!response.ok) throw new Error(data.detail || `AI assistant failed (${response.status})`);
   return data;
 }
 
 async function reviewDiagramWithAI(model, processDescription) {
   const result = await requestAssistantReply([{
     role: 'user',
-    content: 'Zhodnoť túto procesnú diagramu a navrhni konkrétne zlepšenia. Odpovedz po slovensky presne v tomto formáte, bez úvodných zdvorilostí: \nZHRNUTIE: jedna krátka veta o tom, či je proces zrozumiteľný.\nODPORÚČANIA:\n• [konkrétny krok, ktorý možno zlúčiť, odstrániť alebo zjednodušiť]\n• [chýbajúca kontrola, rozhodnutie alebo zodpovedná rola]\nVyber najviac 3 odporúčania a uveď len tie, ktoré sa skutočne týkajú diagramu. Ak nič netreba meniť, napíš pod ODORÚČANIA: Proces je zrozumiteľný a výrazné zjednodušenie nevidím. Nepíš Markdown tabuľku ani dlhý odsek. Diagram nemeň.',
+    content: 'Review this process diagram and suggest concrete improvements. Answer in English exactly in this format, without any polite introduction:\nSUMMARY: one short sentence on whether the process is understandable.\nRECOMMENDATIONS:\n• [a concrete step that can be merged, removed or simplified]\n• [a missing check, decision or responsible role]\nGive at most 3 recommendations and only those that really concern the diagram. If nothing needs to change, write under RECOMMENDATIONS: The process is clear and I see no significant simplification. Do not write a Markdown table or a long paragraph. Do not change the diagram.',
   }], processDescription, model);
   return result.reply;
 }
@@ -523,7 +525,7 @@ async function reviewDiagramWithAI(model, processDescription) {
 async function reviewStatsWithAI(model, processDescription) {
   const result = await requestAssistantReply([{
     role: 'user',
-    content: 'Сделай краткий анализ узкого места этого бизнес процесса для окна статистики. Сначала найди шаг с наибольшей указанной длительностью и/или стоимостью, используя только значения KPI из диаграммы. Ответь по-словацки в формате:\nNAJVIAC ZAŤAŽUJÚCI KROK: название шага и его длительность/стоимость, если они указаны.\nODPORÚČANIE: что конкретно ускорить или удешевить.\nMOŽNÁ NÁHRADA: конкретный альтернативный способ или шаг, которым можно заменить/улучшить текущий.\nЕсли KPI отсутствуют, прямо скажи, что по времени/стоимости определить узкое место нельзя, и дай одну структурную рекомендацию без выдуманных цифр. Не повторяй общий обзор диаграммы. Nepoužívaj Markdown (žiadne ** ani #), každú sekciu začni na novom riadku.',
+    content: 'Write a short bottleneck analysis of this business process for the statistics window. First find the step with the highest stated duration and/or cost, using only the KPI values from the diagram. Answer in English in this format:\nBOTTLENECK STEP: the step name and its duration/cost, if stated.\nRECOMMENDATION: what exactly to speed up or make cheaper.\nPOSSIBLE REPLACEMENT: a concrete alternative method or step that could replace or improve the current one.\nIf KPIs are missing, say plainly that the bottleneck cannot be determined by time/cost and give one structural recommendation without invented numbers. Do not repeat the general diagram review. Do not use Markdown (no ** or #); start each section on a new line.',
   }], processDescription, model);
   return result.reply;
 }
@@ -548,7 +550,7 @@ function App() {
   const [promptReviewError, setPromptReviewError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [composerMode, setComposerMode] = useState('create');
-  // Chat je rozbalený, len kým je fokus v ňom; inak je to kompaktný pruh dole.
+  // The chat is expanded only while it has focus; otherwise it is a compact bar at the bottom.
   const [isComposerCollapsed, setIsComposerCollapsed] = useState(true);
   const assistantInputRef = useRef(null);
   const composerRef = useRef(null);
@@ -587,7 +589,7 @@ function App() {
   const [username, setUsername] = useState(localStorage.getItem('auth_username') || null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [pendingAction, setPendingAction] = useState(null);
-  const [selectedCategory, setSelectedCategory] = useState('Iné');
+  const [selectedCategory, setSelectedCategory] = useState(DEFAULT_CATEGORY);
   const [showInfoModal, setShowInfoModal] = useState(false);
 
   useEffect(() => {
@@ -614,7 +616,7 @@ function App() {
       try {
         const review = await reviewPromptWithAI(prompt, controller.signal);
         setPromptReview(review);
-        // Rozhodnutie o rozsahu krokov platí aj pre ďalšie kontroly; otázky AI sú nové
+        // The step-range decision stays valid for later reviews; AI questions are new
         setAnsweredQuestions((prev) => prev.filter((key) => key === 'range'));
         setPromptReviewStatus('ready');
       } catch (error) {
@@ -630,13 +632,12 @@ function App() {
     };
   }, [promptText, composerMode]);
 
-  // ─── LINTER: Automatická kontrola logiky diagramu ───
-    // LINTER (Automatická kontrola logiky diagramu)
+  // ─── LINTER: automatic check of the diagram logic ───
   useEffect(() => {
     setNodes(nds => {
       let changed = false;
 
-      // 1. Spočítame vstupy a výstupy pre každý uzol
+      // 1. Count inputs and outputs of every node
       const inCount = {};
       const outCount = {};
       nds.forEach(n => {
@@ -651,7 +652,7 @@ function App() {
         if (outCount[e.source] !== undefined) outCount[e.source]++;
       });
 
-      // 2. Zistíme, koľko uzlov v celom diagrame má presne 0 vstupov a 0 výstupov
+      // 2. Count how many nodes in the whole diagram have exactly 0 inputs and 0 outputs
       let zeroInTotal = 0;
       let zeroOutTotal = 0;
       nds.forEach(n => {
@@ -661,7 +662,7 @@ function App() {
         }
       });
 
-      // 3. Vyhodnotenie chýb pre každý uzol
+      // 3. Evaluate errors for every node
       const hasEvents = nds.some(n => n.type !== 'swimlane' && isEventNode(n));
       const newNodes = nds.map(n => {
         if (n.type === 'swimlane') return n;
@@ -669,15 +670,15 @@ function App() {
         const incomingCount = inCount[n.id];
         const outgoingCount = outCount[n.id];
 
-        // Diagram má vlastné počiatočné/koncové uzly; textová poistka ostáva len pre staršie diagramy bez nich
+        // The diagram has its own start/end nodes; the text fallback is only for older diagrams without them
         const labelLower = (n.data.baseLabel || n.data.label || '').toLowerCase();
         const isExplicitStart = hasEvents ? isStartEventNode(n) : n.id === 'start' || labelLower.includes('začiatok') || labelLower.includes('start');
         const isExplicitEnd = hasEvents ? isEndEventNode(n) : n.id === 'end' || labelLower.includes('koniec') || labelLower.includes('end');
 
-        // Uzol je ZAČIATOK, ak je explicitne pomenovaný, ALEBO ak je to JEDINÝ uzol v diagrame bez vstupu
+        // A node is the START if it is explicitly named so, OR if it is the ONLY node in the diagram without an input
         const isStart = isExplicitStart || (incomingCount === 0 && zeroInTotal === 1);
 
-        // Uzol je KONIEC, ak je explicitne pomenovaný, ALEBO ak je to JEDINÝ uzol v diagrame bez výstupu
+        // A node is the END if it is explicitly named so, OR if it is the ONLY node in the diagram without an output
         const isEnd = isExplicitEnd || (outgoingCount === 0 && zeroOutTotal === 1);
 
         let isInvalid = false;
@@ -685,10 +686,10 @@ function App() {
 
         if (!isStart && incomingCount === 0) {
           isInvalid = true;
-          validationMsg = 'Chyba - vstupná hrana! Tento krok procesu je nedosiahnuteľný.';
+          validationMsg = 'Error – missing incoming edge! This process step is unreachable.';
         } else if (!isEnd && outgoingCount === 0) {
           isInvalid = true;
-          validationMsg = 'Chyba - výstupná hrana! Proces tu nečakane končí - slepá ulička.';
+          validationMsg = 'Error – missing outgoing edge! The process ends here unexpectedly – a dead end.';
         }
 
         if (n.data.isInvalid !== isInvalid || n.data.validationMsg !== validationMsg) {
@@ -707,21 +708,21 @@ function App() {
   const modalResolveRef = useRef(null);
   const showModal = (cfg) => new Promise(res => { modalResolveRef.current = res; setModalConfig(cfg); });
   const handleModalClose = (v) => { setModalConfig(null); if (modalResolveRef.current) { modalResolveRef.current(v); modalResolveRef.current = null; } };
-  const modalAlert   = (msg, title = 'Upozornenie') => showModal({ type: 'alert', title, message: msg });
+  const modalAlert   = (msg, title = 'Notice') => showModal({ type: 'alert', title, message: msg });
   const modalPrompt  = (title, placeholder = '', defaultValue = '') => showModal({ type: 'prompt', title, placeholder, defaultValue });
-  const modalConfirm = (msg, title = 'Potvrdení', confirmLabel = 'Áno', cancelLabel = 'Nie', danger = false) =>
+  const modalConfirm = (msg, title = 'Confirm', confirmLabel = 'Yes', cancelLabel = 'No', danger = false) =>
     showModal({ type: 'confirm', title, message: msg, confirmLabel, cancelLabel, danger });
 
   const ensureSavedBeforeDownload = async () => {
     if (isSavedToCatalog) return true;
 
     await modalAlert(
-      'Pred stiahnutím musíš diagram najprv uložiť do archívu. Môže byť aj súkromný.',
-      'Najprv ulož diagram'
+      'Before downloading, save the diagram to the catalog first. It can be private.',
+      'Save the diagram first'
     );
     return false;
   };
-  // ─ História Undo/Redo ──────────────────────────────────────────────
+  // ─ Undo/Redo history ───────────────────────────────────────────────
   const histRef = useRef([{ nodes: [], edges: [] }]);
   const histIdxRef = useRef(0);
   const saveHistory = useCallback((ns, es) => {
@@ -788,7 +789,7 @@ function App() {
     setIsDiagramReviewLoading(true);
     reviewDiagramWithAI(model, description)
       .then(setDiagramReview)
-      .catch((error) => setDiagramReview(`AI kontrolu diagramu sa nepodarilo načítať: ${error.message}`))
+      .catch((error) => setDiagramReview(`Could not load the AI diagram review: ${error.message}`))
       .finally(() => setIsDiagramReviewLoading(false));
   };
 
@@ -798,11 +799,11 @@ function App() {
     setIsStatsReviewLoading(true);
     reviewStatsWithAI(model, description)
       .then(setStatsReview)
-      .catch((error) => setStatsReview(`AI analýzu štatistiky sa nepodarilo načítať: ${error.message}`))
+      .catch((error) => setStatsReview(`Could not load the AI statistics analysis: ${error.message}`))
       .finally(() => setIsStatsReviewLoading(false));
   };
 
-  // Porovnanie diagramu so zadaním; signature = stav diagramu, ku ktorému výsledok patrí
+  // Compares the diagram with the description; signature = the diagram state the result belongs to
   const runAccuracyCheck = (model, description, signature) => {
     const requestId = accuracyRequestRef.current + 1;
     accuracyRequestRef.current = requestId;
@@ -816,7 +817,7 @@ function App() {
     }
     setIsDiagramAccuracyLoading(true);
     evaluateGeneratedDiagram(description, model)
-      // Signatúru meníme až pri úspechu, aby neúspešný prepočet nezakryl, že výsledok je zastaraný
+      // The signature changes only on success so a failed recheck does not hide that the result is stale
       .then((result) => { if (accuracyRequestRef.current === requestId) { setDiagramAccuracy(result); setAccuracySignature(signature); } })
       .catch((error) => { if (accuracyRequestRef.current === requestId) setDiagramAccuracyError(error.message); })
       .finally(() => { if (accuracyRequestRef.current === requestId) setIsDiagramAccuracyLoading(false); });
@@ -831,7 +832,7 @@ function App() {
       .catch((error) => { if (resourcesRequestRef.current === requestId) setResources((prev) => ({ ...prev, loading: false, error: error.message })); });
   };
 
-  // Nový diagram (generovanie, katalóg): staré AI výsledky k nemu nepatria
+  // New diagram (generation, catalog): old AI results do not belong to it
   const resetDiagramInsights = () => {
     accuracyRequestRef.current += 1;
     resourcesRequestRef.current += 1;
@@ -850,14 +851,14 @@ function App() {
     setShowStatsModal(true);
   };
 
-  // Kapitoly štatistiky si AI dáta načítajú, až keď sú otvorené a diagram sa odvtedy zmenil
+  // Statistics chapters load AI data only when opened and the diagram has changed since
   useEffect(() => {
     if (!showStatsModal || !workNodes.length) return;
     if (statsChapter === 'resources' && resources.signature !== modelSignature && !resources.loading) {
       loadResources(currentModel, promptText, modelSignature);
     }
     if (statsChapter === 'advice') {
-      // showDiagramReview vynuluje analýzu úzkeho miesta, preto ide ako prvá
+      // showDiagramReview resets the bottleneck analysis, so it runs first
       if (diagramReviewSignature !== modelSignature && !isDiagramReviewLoading) showDiagramReview(currentModel, promptText);
       if ((statsReviewSignature !== modelSignature || diagramReviewSignature !== modelSignature) && !isStatsReviewLoading) showStatsReview(currentModel, promptText);
     }
@@ -873,13 +874,13 @@ function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [showStatsModal, modalConfig]);
 
-  // ── AI chat: rozbalenie pri fokuse, zbalenie keď fokus odíde ──
+  // ── AI chat: expand on focus, collapse when focus leaves ──
   const handleComposerFocus = () => setIsComposerCollapsed(false);
 
   const handleComposerBlur = (event) => {
     const next = event.relatedTarget;
     if (next && composerRef.current?.contains(next)) return;
-    // Klik na neinteraktívnu časť chatu (napr. text rád) alebo tlačidlo, ktoré sa práve zablokovalo
+    // A click on a non-interactive part of the chat (e.g. advice text) or a button that just became disabled
     if (!next && (composerPointerRef.current || event.target.disabled)) return;
     setIsComposerCollapsed(true);
   };
@@ -916,10 +917,10 @@ function App() {
     if (submitter && !submitter.disabled) form.requestSubmit(submitter);
   };
 
-  // Ak je chat rozbalený bez fokusu (po kliku do textu rád), zbalí ho klik mimo alebo Esc.
+  // If the chat is expanded without focus (after clicking the advice text), a click outside or Esc collapses it.
   useEffect(() => {
     if (isComposerCollapsed) {
-      // V zbalenom pruhu ukáž začiatok textu, nie posledný riadok
+      // Show the start of the text in the collapsed bar, not the last line
       if (assistantInputRef.current) assistantInputRef.current.scrollTop = 0;
       return undefined;
     }
@@ -950,7 +951,7 @@ function App() {
   };
 
   const onConnect = useCallback(async (params) => {
-    // Z počiatočného uzla vedú len obyčajné hrany – nie je to rozhodnutie a nepýta sa na podmienky
+    // Only plain edges leave the start node – it is not a decision, so no conditions are asked for
     if (isEventNode(nodes.find((n) => n.id === params.source))) {
       const nextEdges = addEdge({ ...params, ...edgeOptions, label: null }, edges);
       setEdges(nextEdges);
@@ -964,19 +965,19 @@ function App() {
     const firstEdgeLabelUpdates = {};
 
     if (currentCount === 1) {
-      const r2 = await modalPrompt('Podmienka pre NOVÚ cestu (napr. Áno):', 'Áno', 'Áno');
+      const r2 = await modalPrompt('Condition for the NEW path (e.g. Yes):', 'Yes', 'Yes');
       if (r2 === null) return;
-      newEdgeLabel = r2.trim() || 'Možnosť 2';
+      newEdgeLabel = r2.trim() || 'Option 2';
       const firstEdge = currentSourceEdges[0];
       if (!firstEdge.label || firstEdge.label.trim() === '') {
-        const r1 = await modalPrompt('Podmienka pre PRVU cestu (napr. Nie):', 'Nie', 'Nie');
+        const r1 = await modalPrompt('Condition for the FIRST path (e.g. No):', 'No', 'No');
         if (r1 === null) return;
-        firstEdgeLabelUpdates[firstEdge.id] = r1.trim() || 'Možnosť 1';
+        firstEdgeLabelUpdates[firstEdge.id] = r1.trim() || 'Option 1';
       }
     } else if (currentCount > 1) {
-      const rn = await modalPrompt('Podmienka pre novú cestu:', `Možnosť ${currentCount + 1}`, `Možnosť ${currentCount + 1}`);
+      const rn = await modalPrompt('Condition for the new path:', `Option ${currentCount + 1}`, `Option ${currentCount + 1}`);
       if (rn === null) return;
-      newEdgeLabel = rn.trim() || `Možnosť ${currentCount + 1}`;
+      newEdgeLabel = rn.trim() || `Option ${currentCount + 1}`;
     }
 
       const updatedEdgesBase = edges.map((e) =>
@@ -1001,7 +1002,7 @@ function App() {
   const onEdgeClick = (_event, edge) => { setSelectedEdgeId(edge.id); setSelectedNodeId(null); };
 
   const buildSwimLaneLayout = useCallback((inputTaskNodes, currentEdges, customWidth = laneCustomWidth) => {
-    // Začiatok/koniec nemajú vlastnú rolu – patria do dráhy prvého nasledujúceho / posledného predchádzajúceho kroku
+    // Start/end have no role of their own – they belong to the lane of the first following / last preceding step
     const actorOfStep = (id) => inputTaskNodes.find((n) => n.id === id && !isEventNode(n))?.data?.actor || '';
     const currentTaskNodes = inputTaskNodes.map((n) => {
       if (!isEventNode(n)) return n;
@@ -1048,7 +1049,7 @@ function App() {
       const laneId = `__lane__${actor || '__none__'}`;
       laneNodes.push({
         id: laneId, type: 'swimlane',
-        data: { label: actor || 'Bez roly', actor, index: idx, isFirst: idx === 0, currentWidth: finalLaneWidth, minWidth: calculatedMinWidth, onWidthChange: handleWidthChange, onRename: handleLaneRename },
+        data: { label: actor || NO_ROLE, actor, index: idx, isFirst: idx === 0, currentWidth: finalLaneWidth, minWidth: calculatedMinWidth, onWidthChange: handleWidthChange, onRename: handleLaneRename },
         position: { x: 0, y: laneY }, style: { width: finalLaneWidth, height: LANE_HEIGHT }, selectable: false, draggable: false, zIndex: -1,
       });
 
@@ -1076,10 +1077,10 @@ function App() {
   const loadModel = async () => {
     setIsLoading(true); setLaneCustomWidth(null);
     try {
-      const sourceDescription = promptText.trim() || 'Vygeneruj jednoduchý business proces';
+      const sourceDescription = promptText.trim() || 'Generate a simple business process';
       const data = await generateDiagramFromText(sourceDescription, minNodes, maxNodes, includeKpi);
-      if (data.nodes.some(n => n.id === "start" && n.label === "Chyba AI")) {
-        await modalAlert(data.nodes.find(n => n.id === 'end')?.label || 'Chyba AI', 'Chyba AI');
+      if (data.nodes.some(n => n.id === "start" && n.label === "AI error")) {
+        await modalAlert(data.nodes.find(n => n.id === 'end')?.label || 'AI error', 'AI error');
         setIsLoading(false); return;
       }
       const rawEdges = (data.edges || []).map((edge) => ({ id: edge.id, source: edge.source, target: edge.target, label: edge.label || null, ...edgeOptions }));
@@ -1112,7 +1113,7 @@ function App() {
       showDiagramReview(generatedModel, sourceDescription);
       runAccuracyCheck(generatedModel, sourceDescription, structureSignatureOf(laidTasks, laidEdges));
     } catch (err) {
-      await modalAlert(`Generovanie zlyhalo: ${err.message}`, 'Chyba');
+      await modalAlert(`Generation failed: ${err.message}`, 'Error');
     } finally { setIsLoading(false); }
   };
 
@@ -1122,35 +1123,35 @@ function App() {
 
   const executeSaveToCatalog = async () => {
   if (taskNodes.length === 0) {
-    await modalAlert("Nie je čo uložiť.", "Prázdny diagram");
+    await modalAlert("There is nothing to save.", "Empty diagram");
     return;
   }
 
   const hasErrors = taskNodes.some(n => n.data.isInvalid);
   if (hasErrors) {
     const proceed = await modalConfirm(
-      "Váš diagram obsahuje logické chyby (slepé uličky alebo chýbajúce vstupy). Chcete ho napriek tomu uložiť?",
-      "Upozornenie – Chybné prepojenia", "Ignorovať a pokračovať", "Vrátiť sa k opravám", true
+      "Your diagram contains logic errors (dead ends or missing inputs). Do you want to save it anyway?",
+      "Warning – broken connections", "Ignore and continue", "Go back and fix", true
     );
     if (!proceed) return;
   }
 
-  const title = await modalPrompt("Názov diagramu", "napr. Schvaľovanie faktúry");
+  const title = await modalPrompt("Diagram name", "e.g. Invoice approval");
   if (!title || !title.trim()) return;
 
-  // ── NOVÝ KROK: výber kategórie ──
+  // ── Category selection ──
   const categoryIndex = await showModal({
     type: 'select',
-    title: 'Kategória diagramu',
-    message: 'Vyber kategóriu, do ktorej patrí tento proces:',
+    title: 'Diagram category',
+    message: 'Choose the category this process belongs to:',
     options: CATEGORIES,
-    defaultValue: 'Iné',
+    defaultValue: DEFAULT_CATEGORY,
   });
-  const chosenCategory = categoryIndex ?? 'Iné';
+  const chosenCategory = categoryIndex ?? DEFAULT_CATEGORY;
 
   const isPublic = await modalConfirm(
-    "Chceš diagram zverejniť pre ostatných používateľov?",
-    "Viditeľnosť diagramu", "Áno, zverejniť", "Nie, súkromný"
+    "Do you want to publish the diagram for other users?",
+    "Diagram visibility", "Yes, make it public", "No, keep it private"
   );
     const processModel = {
       nodes: taskNodes.map((n) => ({ id: n.id, type: n.data.nodeType || 'task', label: n.data.baseLabel || n.data.label, actor: n.data.actor || null, isDecision: n.data.isDecision || false })),
@@ -1171,34 +1172,34 @@ function App() {
           category: chosenCategory,
         }),
       });
-      if (resp.status === 401) { handleLogout(); await modalAlert('Prihlásenie vypršalo. Prihlás sa znova.', 'Relácia vypršala'); return; }
-      if (!resp.ok) throw new Error('Ukladanie zlyhalo');
+      if (resp.status === 401) { handleLogout(); await modalAlert('Your sign-in has expired. Please sign in again.', 'Session expired'); return; }
+      if (!resp.ok) throw new Error('Saving failed');
       setIsSavedToCatalog(true);
-      await modalAlert(`Diagram „${title.trim()}“ bol úspešne uložený.`, 'Uložené');
-    } catch (err) { await modalAlert('Ukladanie zlyhalo. Skús to znova.', 'Chyba'); }
+      await modalAlert(`Diagram "${title.trim()}" was saved successfully.`, 'Saved');
+    } catch (err) { await modalAlert('Saving failed. Please try again.', 'Error'); }
   };
 
   const saveToCatalog = () => requireAuth(executeSaveToCatalog);
   const openCatalog = () => requireAuth(() => setView('catalog'));
 
-  // ─ Export diagramu do BPMN 2.0 XML ────────────────────────────────────
+  // ─ Export the diagram to BPMN 2.0 XML ─────────────────────────────────
   const handleDownloadBpmn = async () => {
     const canDownload = await ensureSavedBeforeDownload();
     if (!canDownload) return;
 
-    if (taskNodes.length === 0) { modalAlert('Diagram je prázdny.'); return; }
+    if (taskNodes.length === 0) { modalAlert('The diagram is empty.'); return; }
     const hasErrors = taskNodes.some(n => n.data.isInvalid);
     if (hasErrors) {
       const proceed = await modalConfirm(
-      'Diagram má červeným vyznačené neuzavreté kroky alebo chýbajúce vstupné hrany. Chcete napriek tomu stiahnuť BPMN súbor?',
-      'Stiahnutie BPMN s chybami',
-      'Ignorovať a stiahnuť BPMN',
-    'Zrušiť stiahnutie'
+      'The diagram has unfinished steps or missing incoming edges marked in red. Do you want to download the BPMN file anyway?',
+      'Download BPMN with errors',
+      'Ignore and download BPMN',
+      'Cancel download'
     );
     if (!proceed) return;
     }
 
-    // ── Layout konštanty ─────────────────────────────────────────────────
+    // ── Layout constants ─────────────────────────────────────────────────
     const POOL_LABEL_W = 30;
     const LANE_LABEL_W = 30;
     const HEADER_W     = POOL_LABEL_W + LANE_LABEL_W;
@@ -1212,18 +1213,18 @@ function App() {
     const POOL_X       = 80;
     const POOL_Y       = 80;
 
-    // ── Unikatne lanes ───────────────────────────────────────────────────
+    // ── Unique lanes ─────────────────────────────────────────────────────
     const actorOrder = [];
     const seenActors = new Set();
     taskNodes.forEach(n => {
-      const a = n.data.actor || 'Bez roly';
+      const a = n.data.actor || NO_ROLE;
       if (!seenActors.has(a)) { seenActors.add(a); actorOrder.push(a); }
     });
     const laneCount = actorOrder.length;
     const laneIdxOf = {};
     actorOrder.forEach((a, i) => { laneIdxOf[a] = i; });
 
-    // ── Krok 1: Pociatocne stlpce (cykly -> robustny DFS + Kahn) ─────────
+    // ── Step 1: initial columns (cycles -> robust DFS + Kahn) ────────────
     const outMap = {};
     const inMap = {};
     taskNodes.forEach(n => { outMap[n.id] = []; inMap[n.id] = []; });
@@ -1278,12 +1279,12 @@ function App() {
     }
     taskNodes.forEach(n => { if (col[n.id] === undefined) col[n.id] = 0; });
 
-    // ── Krok 2: Iteracna stabilizacia (max 50 kol) ───────────────────────
-    // Pre "strict left-to-right" posunúť kolízie GLOBÁLNE, nie len pre lane.
+    // ── Step 2: iterative stabilisation (max 50 rounds) ──────────────────
+    // For a "strict left-to-right" layout resolve collisions GLOBALLY, not only per lane.
     for (let iter = 0; iter < 50; iter++) {
       let changed = false;
 
-      // A) Hranova podmienka: col[target] > col[source]
+      // A) Edge condition: col[target] > col[source]
       edges.forEach(e => {
         const cs = col[e.source];
         const ct = col[e.target];
@@ -1295,7 +1296,7 @@ function App() {
         }
       });
 
-      // B) Kolizie GLOBÁLNE V CELOM DIAGRAME
+      // B) Collisions GLOBALLY IN THE WHOLE DIAGRAM
       const colUsed = {};
       taskNodes
         .slice()
@@ -1312,13 +1313,13 @@ function App() {
     }
 
 
-    // ── Finalny maxCol a rozmery diagramu ────────────────────────────────
+    // ── Final maxCol and diagram size ────────────────────────────────────
     const maxCol   = Math.max(0, ...taskNodes.map(n => col[n.id] || 0));
     const contentW = PAD_X + (maxCol + 1) * COL_W + PAD_X;
     const laneW    = Math.max(LANE_LABEL_W + contentW, 800);
     const totalH   = laneCount * ROW_H;
 
-    // ── Pozicie uzlov ────────────────────────────────────────────────────
+    // ── Node positions ───────────────────────────────────────────────────
     const isStartNode = n => isStartEventNode(n) || n.id === 'start' || (n.data.baseLabel || n.data.label || '').toLowerCase().includes('začiatok');
     const isEndNode   = n => isEndEventNode(n) || n.id === 'end'   || (n.data.baseLabel || n.data.label || '').toLowerCase().includes('koniec');
     const nodeSize    = n => {
@@ -1329,7 +1330,7 @@ function App() {
 
     const nodePos = {};
     taskNodes.forEach(n => {
-      const li       = laneIdxOf[n.data.actor || 'Bez roly'] ?? 0;
+      const li       = laneIdxOf[n.data.actor || NO_ROLE] ?? 0;
       const { w, h } = nodeSize(n);
       const cx = POOL_X + HEADER_W + PAD_X + (col[n.id] || 0) * COL_W + NODE_W / 2;
       const cy = POOL_Y + li * ROW_H + ROW_H / 2;
@@ -1348,14 +1349,14 @@ function App() {
     let laneSetXml = '\n    <bpmn:laneSet id="LaneSet_1">';
     actorOrder.forEach((actor, idx) => {
       const refs = taskNodes
-        .filter(n => (n.data.actor || 'Bez roly') === actor)
+        .filter(n => (n.data.actor || NO_ROLE) === actor)
         .map(n => '\n        <bpmn:flowNodeRef>' + n.id + '</bpmn:flowNodeRef>')
         .join('');
       laneSetXml += '\n      <bpmn:lane id="Lane_' + idx + '" name="' + esc(actor) + '">' + refs + '\n      </bpmn:lane>';
     });
     laneSetXml += '\n    </bpmn:laneSet>';
 
-    // ── Uzly ─────────────────────────────────────────────────────────────
+    // ── Nodes ────────────────────────────────────────────────────────────
     let bpmnNodes = '';
     taskNodes.forEach(n => {
       const lbl = n.data.baseLabel || n.data.label || '';
@@ -1369,9 +1370,9 @@ function App() {
       const hasCost = n.data.costEuros != null;
       if (et === 'bpmn:task' && (hasDur || hasCost)) {
         let doc = '';
-        if (hasDur) doc += `Trvanie: ${formatDuration(n.data.durationMinutes)}`;
+        if (hasDur) doc += `Duration: ${formatDuration(n.data.durationMinutes)}`;
         if (hasDur && hasCost) doc += ' | ';
-        if (hasCost)           doc += 'Naklady: ' + n.data.costEuros + ' EUR';
+        if (hasCost)           doc += 'Cost: ' + n.data.costEuros + ' EUR';
         bpmnNodes += '\n      <bpmn:documentation>' + doc + '</bpmn:documentation>';
         bpmnNodes += '\n      <bpmn:extensionElements>\n        <camunda:properties>';
         if (hasDur)  bpmnNodes += '\n          <camunda:property name="durationMinutes" value="' + n.data.durationMinutes + '" />';
@@ -1383,7 +1384,7 @@ function App() {
       bpmnNodes += '\n    </' + et + '>';
     });
 
-    // ── Hrany ────────────────────────────────────────────────────────────
+    // ── Edges ────────────────────────────────────────────────────────────
     let bpmnEdges = '';
     edges.forEach(e => {
       bpmnEdges += '\n    <bpmn:sequenceFlow id="' + e.id + '" sourceRef="' + e.source + '" targetRef="' + e.target + '" name="' + esc(e.label || '') + '" />';
@@ -1400,7 +1401,7 @@ function App() {
         + '\n      </bpmndi:BPMNShape>';
     });
 
-    // ── DI: Uzly ─────────────────────────────────────────────────────────
+    // ── DI: Nodes ────────────────────────────────────────────────────────
     taskNodes.forEach(n => {
       const p = nodePos[n.id];
       diShapes += '\n      <bpmndi:BPMNShape id="' + n.id + '_di" bpmnElement="' + n.id + '"'
@@ -1409,13 +1410,13 @@ function App() {
         + '\n      </bpmndi:BPMNShape>';
     });
 
-    // ── DI: Hrany (Založené na pravidlách Camunda / BPMN.io) ─────────────
+    // ── DI: Edges (based on the Camunda / BPMN.io rules) ─────────────────
 
     const routeEdge = (sc, tc, x1, y1, x2, y2, scRow, tcRow, isBackwards) => {
       const midGapSource = POOL_X + HEADER_W + PAD_X + sc * COL_W + NODE_W + (COL_W - NODE_W) / 2;
       const midGapTarget = POOL_X + HEADER_W + PAD_X + (tc - 1) * COL_W + NODE_W + (COL_W - NODE_W) / 2;
 
-      // ── 1. BACKWARDS cyklus (šípka ide späť) ───────────────────────────
+      // ── 1. BACKWARDS loop (the arrow goes back) ────────────────────────
       if (isBackwards) {
         const outX = x1 + 15;
         const detourY = Math.round(POOL_Y + scRow * ROW_H + 15);
@@ -1429,7 +1430,7 @@ function App() {
              + '\n        <di:waypoint x="' + x2 + '" y="' + y2 + '" />';
       }
 
-      // ── 2. FORWARDS (rôzne lane) ───────────────────────────────────────
+      // ── 2. FORWARDS (different lanes) ──────────────────────────────────
       if (scRow !== tcRow) {
         if (tc === sc + 1) {
           return '\n        <di:waypoint x="' + x1 + '" y="' + y1 + '" />'
@@ -1453,7 +1454,7 @@ function App() {
         }
       }
 
-      // ── 3. FORWARDS (rovnaká lane) ─────────────────────────────────────
+      // ── 3. FORWARDS (same lane) ────────────────────────────────────────
       if (scRow === tcRow) {
         if (tc === sc + 1) {
           return '\n        <di:waypoint x="' + x1 + '" y="' + y1 + '" />'
@@ -1481,8 +1482,8 @@ function App() {
       const tp = nodePos[tn.id];
       const sc = col[sn.id] || 0;
       const tc = col[tn.id] || 0;
-      const scRow = laneIdxOf[sn.data.actor || 'Bez roly'] ?? 0;
-      const tcRow = laneIdxOf[tn.data.actor || 'Bez roly'] ?? 0;
+      const scRow = laneIdxOf[sn.data.actor || NO_ROLE] ?? 0;
+      const tcRow = laneIdxOf[tn.data.actor || NO_ROLE] ?? 0;
 
       const x1 = sp.x + sp.w;   const y1 = sp.cy;
       const x2 = tp.x;          const y2 = tp.cy;
@@ -1492,7 +1493,7 @@ function App() {
       diEdges += '\n      <bpmndi:BPMNEdge id="' + e.id + '_di" bpmnElement="' + e.id + '">' + wpts + '\n      </bpmndi:BPMNEdge>';
     });
 
-    // ── Finálne XML ──────────────────────────────────────────────────────
+    // ── Final XML ────────────────────────────────────────────────────────
     const xml = '<?xml version="1.0" encoding="UTF-8"?>\n'
       + '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" '
       + 'xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" '
@@ -1501,7 +1502,7 @@ function App() {
       + 'xmlns:camunda="http://camunda.org/schema/1.0/bpmn" '
       + 'id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">\n'
       + '  <bpmn:collaboration id="' + collabId + '">\n'
-      + '    <bpmn:participant id="' + participantId + '" name="Proces" processRef="' + processId + '" />\n'
+      + '    <bpmn:participant id="' + participantId + '" name="Process" processRef="' + processId + '" />\n'
       + '  </bpmn:collaboration>\n'
       + '  <bpmn:process id="' + processId + '" isExecutable="true">'
       + laneSetXml + bpmnNodes + '\n' + bpmnEdges
@@ -1522,19 +1523,19 @@ function App() {
     setTimeout(() => URL.revokeObjectURL(url), 250);
   };
 
-    // ─ Export diagramu do UML Activity Diagram (XMI 2.1) ───────────────
+  // ─ Export the diagram to a UML Activity Diagram (XMI 2.1) ──────────
   const handleDownloadUml = async () => {
     const canDownload = await ensureSavedBeforeDownload();
     if (!canDownload) return;
 
-    if (taskNodes.length === 0) { modalAlert('Diagram je prázdny.'); return; }
+    if (taskNodes.length === 0) { modalAlert('The diagram is empty.'); return; }
     const hasErrors = taskNodes.some(n => n.data.isInvalid);
     if (hasErrors) {
       const proceed = await modalConfirm(
-        'Diagram má červeným vyznačené neuzavreté kroky alebo chýbajúce vstupné hrany. Chcete napriek tomu stiahnuť XMI súbor?',
-        'Stiahnutie XMI s chybami',
-        'Ignorovať a stiahnuť XMI',
-        'Zrušiť stiahnutie'
+        'The diagram has unfinished steps or missing incoming edges marked in red. Do you want to download the XMI file anyway?',
+        'Download XMI with errors',
+        'Ignore and download XMI',
+        'Cancel download'
       );
       if (!proceed) return;
     }
@@ -1563,7 +1564,7 @@ function App() {
     const actorOrder = [];
     const seenActors = new Set();
     taskNodes.forEach(n => {
-      const a = n.data.actor || 'Bez roly';
+      const a = n.data.actor || NO_ROLE;
       if (!seenActors.has(a)) { seenActors.add(a); actorOrder.push(a); }
     });
 
@@ -1571,7 +1572,7 @@ function App() {
     actorOrder.forEach((actor, idx) => {
       let refs = '';
       taskNodes.forEach(n => {
-        if ((n.data.actor || 'Bez roly') === actor) {
+        if ((n.data.actor || NO_ROLE) === actor) {
           refs += `\n          <node xmi:idref="${n.id}" />`;
         }
       });
@@ -1597,24 +1598,24 @@ function App() {
     setTimeout(() => URL.revokeObjectURL(url), 250);
   };
 
-  // ─ Export diagramu do UXF (UMLet) ───────────────────────────────────────
+  // ─ Export the diagram to UXF (UMLet) ────────────────────────────────────
   const handleDownloadUxf = async () => {
     const canDownload = await ensureSavedBeforeDownload();
     if (!canDownload) return;
 
-    if (taskNodes.length === 0) { modalAlert('Diagram je prázdny.'); return; }
+    if (taskNodes.length === 0) { modalAlert('The diagram is empty.'); return; }
     const hasErrors = taskNodes.some(n => n.data.isInvalid);
     if (hasErrors) {
       const proceed = await modalConfirm(
-        'Diagram má červeným vyznačené neuzavreté kroky alebo chýbajúce vstupné hrany. Chcete napriek tomu stiahnuť UXF súbor?',
-        'Stiahnutie UXF s chybami',
-        'Ignorovať a stiahnuť UXF',
-        'Zrušiť stiahnutie'
+        'The diagram has unfinished steps or missing incoming edges marked in red. Do you want to download the UXF file anyway?',
+        'Download UXF with errors',
+        'Ignore and download UXF',
+        'Cancel download'
       );
       if (!proceed) return;
     }
 
-    // ── Layout konštanty a Kahn BFS (Kopírujeme logiku z BPMN) ───────────
+    // ── Layout constants and Kahn BFS (same logic as BPMN) ───────────────
     const POOL_LABEL_W = 30;
     const LANE_LABEL_W = 30;
     const HEADER_W     = POOL_LABEL_W + LANE_LABEL_W;
@@ -1631,7 +1632,7 @@ function App() {
     const actorOrder = [];
     const seenActors = new Set();
     taskNodes.forEach(n => {
-      const a = n.data.actor || 'Bez roly';
+      const a = n.data.actor || NO_ROLE;
       if (!seenActors.has(a)) { seenActors.add(a); actorOrder.push(a); }
     });
     const laneCount = actorOrder.length;
@@ -1721,7 +1722,7 @@ function App() {
 
     const nodePos = {};
     taskNodes.forEach(n => {
-      const li = laneIdxOf[n.data.actor || 'Bez roly'] ?? 0;
+      const li = laneIdxOf[n.data.actor || NO_ROLE] ?? 0;
       const { w, h } = nodeSize(n);
       const cx = POOL_X + HEADER_W + PAD_X + (col[n.id] || 0) * COL_W + NODE_W / 2;
       const cy = POOL_Y + li * ROW_H + ROW_H / 2;
@@ -1730,7 +1731,7 @@ function App() {
 
     const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-    // ── UXF XML generovanie ─────────────────────────────────────────────
+    // ── UXF XML generation ──────────────────────────────────────────────
     let elementsXml = '';
 
     // Swimlanes
@@ -1812,8 +1813,8 @@ function App() {
       const tp = nodePos[tn.id];
       const sc = col[sn.id] || 0;
       const tc = col[tn.id] || 0;
-      const scRow = laneIdxOf[sn.data.actor || 'Bez roly'] ?? 0;
-      const tcRow = laneIdxOf[tn.data.actor || 'Bez roly'] ?? 0;
+      const scRow = laneIdxOf[sn.data.actor || NO_ROLE] ?? 0;
+      const tcRow = laneIdxOf[tn.data.actor || NO_ROLE] ?? 0;
       const isBackwards = tc <= sc;
 
       const x1 = sp.x + sp.w;   const y1 = sp.cy;
@@ -1858,25 +1859,25 @@ function App() {
     setTimeout(() => URL.revokeObjectURL(url), 250);
   };
 
-  // ─ Export diagramu ako obrázok ────────────────────────────────────
+  // ─ Export the diagram as an image ─────────────────────────────────
   const handleDownload = async (format = 'png') => {
     const canDownload = await ensureSavedBeforeDownload();
     if (!canDownload) return;
 
     const viewport = document.querySelector('.react-flow__viewport');
-    if (!viewport) { modalAlert('Diagram nie je k dispozícii.'); return; }
+    if (!viewport) { modalAlert('The diagram is not available.'); return; }
 
     const allNodes = nodes.filter(n => n.type !== 'swimlane');
-    if (allNodes.length === 0) { modalAlert('Diagram je prázdny.'); return; }
+    if (allNodes.length === 0) { modalAlert('The diagram is empty.'); return; }
 
-    // KONTROLA LINTERA: Pred stiahnutím obrázka
+    // LINTER CHECK before downloading the image
     const hasErrors = allNodes.some((n) => n.data.isInvalid);
     if (hasErrors) {
       const proceed = await modalConfirm(
-        'Diagram má červeným vyznačené neuzavreté kroky. Chcete stiahnuť obrázok aj s týmito chybami?',
-        'Stiahnutie s chybami',
-        'Ignorovať a stiahnuť',
-        'Zrušiť stiahnutie'
+        'The diagram has unfinished steps marked in red. Do you want to download the image with these errors?',
+        'Download with errors',
+        'Ignore and download',
+        'Cancel download'
       );
       if (!proceed) return;
     }
@@ -1891,13 +1892,13 @@ function App() {
       backgroundColor: COLORS.canvasBg, width: imgW, height: imgH, pixelRatio: 2,
       style: { width: imgW, height: imgH, transform: `translate(${tx}px, ${ty}px) scale(${sc})`, transformOrigin: 'top left' },
     }).then(url => { const a = document.createElement('a'); a.href = url; a.download = `diagram.${format}`; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(() => URL.revokeObjectURL(url), 250); })
-      .catch(() => modalAlert('Export zlyhal. Skontroluj konzolu.', 'Chyba'));
+      .catch(() => modalAlert('Export failed. Check the console.', 'Error'));
   };
 
   const addNode = () => {
     const id = `new-${nextId}`; setNextId((n) => n + 1);
-    const newNode = { id, type: 'task', data: { label: makeLabel(`Krok ${nextId}`, '', showActors), baseLabel: `Krok ${nextId}`, actor: '', nodeType: 'task', isDecision: false }, position: { x: 0, y: 0 } };
-    // Prvý krok v prázdnom diagrame dostane automaticky začiatok a koniec procesu
+    const newNode = { id, type: 'task', data: { label: makeLabel(`Step ${nextId}`, '', showActors), baseLabel: `Step ${nextId}`, actor: '', nodeType: 'task', isDecision: false }, position: { x: 0, y: 0 } };
+    // The first step in an empty diagram automatically gets a process start and end
     const base = taskNodes.length
       ? { nodes: [...stripLaneProps(nodes), newNode], edges }
       : withStartEnd([newNode], [], edgeOptions);
@@ -1930,7 +1931,7 @@ function App() {
       };
 
       const data = await editDiagramFromText(copilotPrompt, currentModel);
-      if (!data.nodes?.length) throw new Error('AI nevrátila uzly');
+      if (!data.nodes?.length) throw new Error('The AI returned no nodes');
 
       const outgoingCounts = {};
       data.edges.forEach(e => { outgoingCounts[e.source] = (outgoingCounts[e.source] || 0) + 1; });
@@ -1968,7 +1969,7 @@ function App() {
       showDiagramReview(serializeModel(laid.filter((n) => n.type !== 'swimlane'), laidEdges), promptText);
       setCopilotPrompt('');
     } catch (err) {
-      await modalAlert(`Úprava zlyhala: ${err.message}`, 'Chyba');
+      await modalAlert(`Editing failed: ${err.message}`, 'Error');
     } finally {
       setIsCopilotLoading(false);
     }
@@ -1977,7 +1978,7 @@ function App() {
   const renameSelectedNode = async () => {
     if (!selectedNodeId) return;
     const cur = taskNodes.find(n => n.id === selectedNodeId);
-    const newLabel = await modalPrompt('Nový názov kroku:', '', cur?.data?.baseLabel || '');
+    const newLabel = await modalPrompt('New step name:', '', cur?.data?.baseLabel || '');
     if (!newLabel || !newLabel.trim()) return;
     const updatedTasks = taskNodes.map((n) => n.id === selectedNodeId ? { ...n, data: { ...n.data, baseLabel: newLabel, label: makeLabel(newLabel, n.data.actor || '', showActors) } } : n);
     const { nodes: laid, edges: laidEdges } = buildSwimLaneLayout(updatedTasks, edges);
@@ -1988,7 +1989,7 @@ function App() {
   const renameSelectedEdge = async () => {
     if (!selectedEdgeId) return;
     const edge = edges.find((e) => e.id === selectedEdgeId);
-    const newLabel = await modalPrompt('Podmienka na hrane:', '', edge?.label || '');
+    const newLabel = await modalPrompt('Edge condition:', '', edge?.label || '');
     if (newLabel !== null) {
       setEdges((eds) => eds.map((e) => e.id === selectedEdgeId ? { ...e, label: newLabel || undefined } : e));
     }
@@ -2000,12 +2001,12 @@ function App() {
     if (!cur) return;
     const durStr = await showModal({
       type: 'duration',
-      title: 'Trvanie uzla',
-      message: 'Zadaj hodnotu a vyber jednotku:',
+      title: 'Node duration',
+      message: 'Enter a value and choose a unit:',
       defaultValue: '',
     });
     if (durStr === null) return;
-    const costStr = await modalPrompt('Naklady uzla (eura)', 'napr. 50', cur?.data?.costEuros?.toString() || '');
+    const costStr = await modalPrompt('Node cost (EUR)', 'e.g. 50', cur?.data?.costEuros?.toString() || '');
     if (costStr === null) return;
     const durationMinutes = durStr ? parseInt(durStr, 10) : null;
     const costEuros = costStr.trim() ? parseFloat(costStr.trim()) || null : null;
@@ -2021,17 +2022,17 @@ function App() {
   const changeActorSelected = async () => {
     if (!selectedNodeId) return;
     const cur2 = taskNodes.find(n => n.id === selectedNodeId);
-    const newActor = await modalPrompt('Nová rola pre uzol:', '', cur2?.data?.actor || '');
+    const newActor = await modalPrompt('New role for the node:', '', cur2?.data?.actor || '');
     const updatedTasks = taskNodes.map((n) => n.id === selectedNodeId ? { ...n, data: { ...n.data, actor: newActor, label: makeLabel(n.data.baseLabel || n.data.label, newActor, showActors) } } : n);
     setLaneCustomWidth(null);
     const { nodes: laid, edges: laidEdges } = buildSwimLaneLayout(updatedTasks, edges);
     setNodes(laid); setEdges(laidEdges); setSelectedNodeId(null);
   };
 
-  // Premenovanie dráhy = zmena roly pri všetkých krokoch v nej (klik na hlavičku dráhy)
+  // Renaming a lane = changing the role of all its steps (click on the lane header)
   const renameLane = async (actor) => {
     const laneActor = actor || '';
-    const newName = await modalPrompt('Nový názov dráhy (roly):', 'napr. Účtovník', laneActor);
+    const newName = await modalPrompt('New lane (role) name:', 'e.g. Accountant', laneActor);
     if (newName === null) return;
     const nextActor = newName.trim();
     if (nextActor === laneActor) return;
@@ -2113,13 +2114,13 @@ function App() {
           <div className="p2f-brand">
             <span className="p2f-brand__mark"><LogoMark /></span>
             <span className="p2f-brand__name">Prompt2Flow</span>
-            <span className="p2f-brand__tag p2f-brand-subtitle">Katalóg</span>
+            <span className="p2f-brand__tag p2f-brand-subtitle">Catalog</span>
           </div>
           <span className="p2f-spacer" />
           <div className="p2f-user">
             <span className="p2f-user__avatar" aria-hidden="true">{(username || '?').charAt(0).toUpperCase()}</span>
             <span className="p2f-user__name">{username}</span>
-            <button type="button" className="p2f-btn p2f-btn--sm" onClick={handleLogout}>Odhlásiť</button>
+            <button type="button" className="p2f-btn p2f-btn--sm" onClick={handleLogout}>Sign out</button>
           </div>
         </header>
         <div className="p2f-catalog-scroll">
@@ -2144,38 +2145,38 @@ function App() {
       </div>
     );
   }
-  // Začiatok a koniec sa pridávajú automaticky: rolu dedia od susedného kroku, KPI nemajú a nedajú sa zmazať
+  // Start and end are added automatically: they inherit the role of the neighbouring step, have no KPIs and cannot be deleted
   const isEventSelected = isEventNode(taskNodes.find((n) => n.id === selectedNodeId));
   const managementActions = [
-    { label: 'Pridať uzol', short: 'Pridať', icon: Icons.Add, onClick: addNode, group: 'diagram' },
-    { label: 'Zarovnať', short: 'Zarovnať', icon: Icons.Align, onClick: onLayout, group: 'diagram' },
-    { label: 'Premenovať uzol', short: 'Premenovať', icon: Icons.Edit, onClick: renameSelectedNode, disabled: !selectedNodeId, group: 'node' },
-    { label: 'Zmeniť rolu', short: 'Rola', icon: Icons.User, onClick: changeActorSelected, disabled: !selectedNodeId || isEventSelected, group: 'node' },
-    { label: 'KPI uzla', short: 'KPI', icon: Icons.KPI, onClick: editNodeKpi, disabled: !selectedNodeId || isEventSelected, group: 'node' },
-    { label: isEventSelected ? 'Začiatok a koniec procesu sa nedajú zmazať' : 'Zmazať uzol', short: 'Zmazať', icon: Icons.Trash, onClick: deleteSelectedNode, disabled: !selectedNodeId || isEventSelected, danger: true, group: 'node' },
-    { label: 'Text hrany', short: 'Text', icon: Icons.Text, onClick: renameSelectedEdge, disabled: !selectedEdgeId, group: 'edge' },
-    { label: 'Zmazať hranu', short: 'Zmazať', icon: Icons.Trash, onClick: deleteSelectedEdge, disabled: !selectedEdgeId, danger: true, group: 'edge' },
+    { label: 'Add node', short: 'Add', icon: Icons.Add, onClick: addNode, group: 'diagram' },
+    { label: 'Align', short: 'Align', icon: Icons.Align, onClick: onLayout, group: 'diagram' },
+    { label: 'Rename node', short: 'Rename', icon: Icons.Edit, onClick: renameSelectedNode, disabled: !selectedNodeId, group: 'node' },
+    { label: 'Change role', short: 'Role', icon: Icons.User, onClick: changeActorSelected, disabled: !selectedNodeId || isEventSelected, group: 'node' },
+    { label: 'Node KPIs', short: 'KPI', icon: Icons.KPI, onClick: editNodeKpi, disabled: !selectedNodeId || isEventSelected, group: 'node' },
+    { label: isEventSelected ? 'The process start and end cannot be deleted' : 'Delete node', short: 'Delete', icon: Icons.Trash, onClick: deleteSelectedNode, disabled: !selectedNodeId || isEventSelected, danger: true, group: 'node' },
+    { label: 'Edge text', short: 'Text', icon: Icons.Text, onClick: renameSelectedEdge, disabled: !selectedEdgeId, group: 'edge' },
+    { label: 'Delete edge', short: 'Delete', icon: Icons.Trash, onClick: deleteSelectedEdge, disabled: !selectedEdgeId, danger: true, group: 'edge' },
   ];
   const toolGroups = [
     { key: 'diagram', caption: null },
-    { key: 'node', caption: 'Uzol' },
-    { key: 'edge', caption: 'Hrana' },
+    { key: 'node', caption: 'Node' },
+    { key: 'edge', caption: 'Edge' },
   ];
   const isAdviceBusy = adviceMode === 'diagram' ? isDiagramReviewLoading : composerMode === 'create' && promptReviewStatus === 'loading';
 
-  // ── Otázky AI k opisu: odpoveď sa doplní do opisu ako „Upresnenie: …“ (rozsah krokov sa mení priamo) ──
+  // ── AI questions about the description: the answer is appended as "Clarification: …" (the step range changes directly) ──
   const rangeQuestion = (() => {
     const count = promptReview?.activity_count || 0;
     const min = parseInt(minNodes, 10);
     const max = parseInt(maxNodes, 10);
     if (!count || Number.isNaN(min) || Number.isNaN(max)) return null;
-    if (count > max) return { key: 'range', isRange: true, question: `Opis obsahuje približne ${count} činností, ale rozsah krokov je ${min}–${max}. Ako postupovať?`, options: [
-      { label: `Zvýšiť maximum na ${count}`, apply: () => setMaxNodes(String(count)) },
-      { label: 'Zlúčiť súvisiace kroky', apply: () => {} },
+    if (count > max) return { key: 'range', isRange: true, question: `The description contains about ${count} activities, but the step range is ${min}–${max}. How should we proceed?`, options: [
+      { label: `Raise the maximum to ${count}`, apply: () => setMaxNodes(String(count)) },
+      { label: 'Merge related steps', apply: () => {} },
     ] };
-    if (count < min) return { key: 'range', isRange: true, question: `Opis obsahuje len ${count} činností, minimum krokov je ${min}. Ako postupovať?`, options: [
-      { label: `Znížiť minimum na ${count}`, apply: () => setMinNodes(String(Math.max(1, count))) },
-      { label: 'Rozdeliť činnosti na podkroky', apply: () => {} },
+    if (count < min) return { key: 'range', isRange: true, question: `The description contains only ${count} activities, but the minimum is ${min} steps. How should we proceed?`, options: [
+      { label: `Lower the minimum to ${count}`, apply: () => setMinNodes(String(Math.max(1, count))) },
+      { label: 'Split activities into sub-steps', apply: () => {} },
     ] };
     return null;
   })();
@@ -2189,7 +2190,7 @@ function App() {
     else {
       setAdviceMode('prompt');
       setDiagramReview('');
-      setPromptText((prev) => `${prev.trimEnd()}\nUpresnenie: ${option.clarification}`);
+      setPromptText((prev) => `${prev.trimEnd()}\nClarification: ${option.clarification}`);
     }
     dismissAiQuestion(question.key);
   };
@@ -2202,7 +2203,7 @@ function App() {
       {showInfoModal && <InfoModal onClose={() => setShowInfoModal(false)} />}
 
       <header className="p2f-header">
-        <button type="button" className="p2f-icon-btn" onClick={() => setShowToolsPanel((open) => !open)} aria-label="Doplnkové funkcie" aria-expanded={showToolsPanel} title="Doplnkové funkcie"><Icons.Menu /></button>
+        <button type="button" className="p2f-icon-btn" onClick={() => setShowToolsPanel((open) => !open)} aria-label="More tools" aria-expanded={showToolsPanel} title="More tools"><Icons.Menu /></button>
         <div className="p2f-brand">
           <span className="p2f-brand__mark"><LogoMark /></span>
           <span className="p2f-brand__name">Prompt2Flow</span>
@@ -2212,8 +2213,8 @@ function App() {
         {username ? <div className="p2f-user">
           <span className="p2f-user__avatar" aria-hidden="true">{username.charAt(0).toUpperCase()}</span>
           <span className="p2f-user__name">{username}</span>
-          <button type="button" className="p2f-btn p2f-btn--sm" onClick={handleLogout}>Odhlásiť</button>
-        </div> : <button type="button" className="p2f-btn p2f-btn--primary p2f-btn--sm" onClick={() => setShowAuthModal(true)}>Prihlásiť sa</button>}
+          <button type="button" className="p2f-btn p2f-btn--sm" onClick={handleLogout}>Sign out</button>
+        </div> : <button type="button" className="p2f-btn p2f-btn--primary p2f-btn--sm" onClick={() => setShowAuthModal(true)}>Sign in</button>}
       </header>
 
       <main className="p2f-main">
@@ -2233,14 +2234,14 @@ function App() {
             </Fragment>)}
           </div>
           {taskNodes.length > 0 && <div className="p2f-top-actions">
-            {laneControls && <div className="p2f-seg" role="group" aria-label="Šírka dráh">
-              <button type="button" className="p2f-seg__btn" onClick={() => laneControls.onWidthChange(Math.max(laneControls.minWidth, laneControls.currentWidth - 150))} disabled={laneControls.currentWidth <= laneControls.minWidth} title="Zúžiť dráhy" aria-label="Width -"><Icons.Minus /></button>
-              <span className="p2f-seg__label">Šírka</span>
-              <button type="button" className="p2f-seg__btn" onClick={() => laneControls.onWidthChange(laneControls.currentWidth + 150)} title="Rozšíriť dráhy" aria-label="Width +"><Icons.Plus /></button>
+            {laneControls && <div className="p2f-seg" role="group" aria-label="Lane width">
+              <button type="button" className="p2f-seg__btn" onClick={() => laneControls.onWidthChange(Math.max(laneControls.minWidth, laneControls.currentWidth - 150))} disabled={laneControls.currentWidth <= laneControls.minWidth} title="Narrow lanes" aria-label="Width -"><Icons.Minus /></button>
+              <span className="p2f-seg__label">Width</span>
+              <button type="button" className="p2f-seg__btn" onClick={() => laneControls.onWidthChange(laneControls.currentWidth + 150)} title="Widen lanes" aria-label="Width +"><Icons.Plus /></button>
             </div>}
-            <button type="button" className="p2f-float-btn" onClick={() => openStats('finance')} title="Štatistika procesu"><Icons.Chart /><span>Štatistika</span></button>
-            {(isDiagramAccuracyLoading || diagramAccuracy || diagramAccuracyError) && <button type="button" className={`p2f-match${isAccuracyStale ? ' is-stale' : ''}`} onClick={() => openStats('match')} title={isAccuracyStale ? 'Diagram sa od porovnania zmenil – otvor a prepočítaj' : diagramAccuracyError || diagramAccuracy?.summary || 'Zhoda diagramu s pôvodným zadaním'}>
-              <span>Zhoda</span>
+            <button type="button" className="p2f-float-btn" onClick={() => openStats('finance')} title="Process statistics"><Icons.Chart /><span>Statistics</span></button>
+            {(isDiagramAccuracyLoading || diagramAccuracy || diagramAccuracyError) && <button type="button" className={`p2f-match${isAccuracyStale ? ' is-stale' : ''}`} onClick={() => openStats('match')} title={isAccuracyStale ? 'The diagram changed since the comparison – open it and recalculate' : diagramAccuracyError || diagramAccuracy?.summary || 'Match between the diagram and the original description'}>
+              <span>Match</span>
               {isDiagramAccuracyLoading ? <span className="p2f-match__value is-busy">…</span> : diagramAccuracy ? <>
                 <span className="p2f-match__bar" aria-hidden="true"><span style={{ width: `${Math.max(0, Math.min(100, Number(diagramAccuracy.accuracy_percent) || 0))}%` }} /></span>
                 <span className="p2f-match__value">{diagramAccuracy.accuracy_percent}%</span>
@@ -2251,64 +2252,64 @@ function App() {
 
         {!taskNodes.length && <div className="p2f-empty">
           <EmptyIllustration />
-          <div className="p2f-empty__title">Opíš proces a AI vytvorí diagram</div>
-          <div className="p2f-empty__text">Zadaj proces do poľa nižšie a začni.</div>
+          <div className="p2f-empty__title">Describe a process and the AI will create a diagram</div>
+          <div className="p2f-empty__text">Type the process into the field below to get started.</div>
         </div>}
 
-        <section ref={composerRef} className={`p2f-composer ${isComposerCollapsed ? 'is-collapsed' : 'is-expanded'}`} aria-label="AI asistent" onFocus={handleComposerFocus} onBlur={handleComposerBlur} onPointerDown={handleComposerPointerDown} onClick={handleComposerClick} onKeyDown={handleComposerKeyDown}>
+        <section ref={composerRef} className={`p2f-composer ${isComposerCollapsed ? 'is-collapsed' : 'is-expanded'}`} aria-label="AI assistant" onFocus={handleComposerFocus} onBlur={handleComposerBlur} onPointerDown={handleComposerPointerDown} onClick={handleComposerClick} onKeyDown={handleComposerKeyDown}>
           <div className="p2f-composer__drawer" inert={isComposerCollapsed}>
             <div className="p2f-composer__drawer-clip">
               <div className="p2f-composer__drawer-body">
                 <div className="p2f-composer__head">
-                  <div className="p2f-tabs" role="tablist" aria-label="Režim asistenta">
-                    <button type="button" role="tab" aria-selected={composerMode === 'create'} className="p2f-tab" onClick={() => { setComposerMode('create'); setAdviceMode('prompt'); setDiagramReview(''); }}>Vytvoriť proces</button>
-                    <button type="button" role="tab" aria-selected={composerMode === 'manage'} className="p2f-tab" onClick={() => { setComposerMode('manage'); if (taskNodes.length) showDiagramReview(currentModel, promptText); else { setAdviceMode('prompt'); setDiagramReview(''); } }}>Správa diagramu</button>
+                  <div className="p2f-tabs" role="tablist" aria-label="Assistant mode">
+                    <button type="button" role="tab" aria-selected={composerMode === 'create'} className="p2f-tab" onClick={() => { setComposerMode('create'); setAdviceMode('prompt'); setDiagramReview(''); }}>Create process</button>
+                    <button type="button" role="tab" aria-selected={composerMode === 'manage'} className="p2f-tab" onClick={() => { setComposerMode('manage'); if (taskNodes.length) showDiagramReview(currentModel, promptText); else { setAdviceMode('prompt'); setDiagramReview(''); } }}>Manage diagram</button>
                   </div>
                   <span className="p2f-spacer" />
-                  <span className="p2f-kbd-hint"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> odoslať · <kbd>Esc</kbd> zbaliť</span>
+                  <span className="p2f-kbd-hint"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> send · <kbd>Esc</kbd> collapse</span>
                 </div>
 
                 {aiQuestions.length > 0 && <div className="p2f-questions">
-                  <div className="p2f-questions__title">Otázky AI<span>nepovinné · odpoveď sa doplní do opisu</span></div>
+                  <div className="p2f-questions__title">AI questions<span>optional · the answer is added to the description</span></div>
                   {aiQuestions.map((q) => <div key={q.key} className="p2f-question">
                     <div className="p2f-question__head">
                       <div className="p2f-question__text">{q.question}</div>
-                      <button type="button" className="p2f-question__skip" onClick={() => dismissAiQuestion(q.key)}>Preskočiť</button>
+                      <button type="button" className="p2f-question__skip" onClick={() => dismissAiQuestion(q.key)}>Skip</button>
                     </div>
                     <div className="p2f-question__options">
                       {q.options.map((option) => <button type="button" key={option.label} className="p2f-question__option" title={option.clarification} onClick={() => answerAiQuestion(q, option)}>{option.label}</button>)}
                       {!q.isRange && <form className="p2f-question__free" onSubmit={(event) => { event.preventDefault(); const value = event.currentTarget.elements.answer.value.trim(); if (value) answerAiQuestion(q, { clarification: `${q.question} ${value}` }); }}>
-                        <input name="answer" className="p2f-question__input" placeholder="Iná odpoveď…" aria-label={`Vlastná odpoveď: ${q.question}`} />
-                        <button type="submit" className="p2f-question__send" aria-label="Doplniť odpoveď do opisu"><Icons.Check /></button>
+                        <input name="answer" className="p2f-question__input" placeholder="Other answer…" aria-label={`Your own answer: ${q.question}`} />
+                        <button type="submit" className="p2f-question__send" aria-label="Add the answer to the description"><Icons.Check /></button>
                       </form>}
                     </div>
                   </div>)}
                 </div>}
 
                 <div className="p2f-advice" data-tone={adviceMode === 'diagram' ? 'diagram' : 'prompt'} aria-live="polite">
-                  <div className="p2f-advice__title"><span className={`p2f-advice__dot${isAdviceBusy ? ' is-busy' : ''}`} />{adviceMode === 'diagram' ? (composerMode === 'manage' ? 'AI návrhy na zmenu diagramu' : 'AI kontrola diagramu') : composerMode === 'manage' ? 'Návrhy úprav diagramu' : 'Rady k opisu procesu'}{adviceMode === 'diagram' && isDiagramReviewLoading && <span className="p2f-advice__status">· analyzujem</span>}</div>
-                  {adviceMode === 'diagram' ? <div className="p2f-advice__body">{isDiagramReviewLoading ? (composerMode === 'manage' ? 'AI hľadá konkrétne možnosti úpravy diagramu…' : 'Kontrolujem kroky, rozhodnutia a možnosti zjednodušenia procesu…') : diagramReview || 'Kontrola diagramu zatiaľ nie je k dispozícii.'}</div> : composerMode === 'manage' ? <div className="p2f-advice__muted">Opíš konkrétnu zmenu existujúceho diagramu. AI upraví iba požadované kroky a zachová ostatné časti procesu.</div> : <div className="p2f-advice__muted">
-                    {promptReviewStatus === 'idle' && 'Opíš proces. Tu sa zobrazia odporúčania; po generovaní AI skontroluje diagram.'}
-                    {promptReviewStatus === 'waiting' && 'Doplň, kto vykonáva jednotlivé kroky a kde sa prijímajú rozhodnutia.'}
-                    {promptReviewStatus === 'loading' && 'Groq kontroluje zadanie…'}
+                  <div className="p2f-advice__title"><span className={`p2f-advice__dot${isAdviceBusy ? ' is-busy' : ''}`} />{adviceMode === 'diagram' ? (composerMode === 'manage' ? 'AI suggestions for changing the diagram' : 'AI diagram review') : composerMode === 'manage' ? 'Diagram editing suggestions' : 'Tips for the process description'}{adviceMode === 'diagram' && isDiagramReviewLoading && <span className="p2f-advice__status">· analysing</span>}</div>
+                  {adviceMode === 'diagram' ? <div className="p2f-advice__body">{isDiagramReviewLoading ? (composerMode === 'manage' ? 'The AI is looking for concrete ways to improve the diagram…' : 'Checking steps, decisions and ways to simplify the process…') : diagramReview || 'The diagram review is not available yet.'}</div> : composerMode === 'manage' ? <div className="p2f-advice__muted">Describe a concrete change to the existing diagram. The AI changes only the requested steps and keeps the rest of the process.</div> : <div className="p2f-advice__muted">
+                    {promptReviewStatus === 'idle' && 'Describe the process. Recommendations appear here; after generation the AI reviews the diagram.'}
+                    {promptReviewStatus === 'waiting' && 'Add who performs each step and where decisions are made.'}
+                    {promptReviewStatus === 'loading' && 'Groq is reviewing the description…'}
                     {promptReviewStatus === 'error' && promptReviewError}
                     {promptReviewStatus === 'ready' && promptReview && <div className="p2f-review">
                       <div className="p2f-review__summary">{promptReview.overall_review}</div>
                       <ul className="p2f-checklist">
                         {[
-                          ['overview_present', 'Prehľad procesu je zrozumiteľný'],
-                          ['steps_ordered', 'Poradie krokov je jasné'],
-                          ['actors_listed', 'Aktéri sú uvedení'],
-                          ['actor_assignments_clear', 'Je jasné, kto vykonáva jednotlivé úlohy'],
+                          ['overview_present', 'The process overview is clear'],
+                          ['steps_ordered', 'The order of steps is clear'],
+                          ['actors_listed', 'The actors are listed'],
+                          ['actor_assignments_clear', 'It is clear who performs each task'],
                         ].map(([key, label]) => {
                           const ok = Boolean(promptReview[key]);
                           return <li key={key} className={ok ? 'is-ok' : 'is-missing'}>
-                            {ok ? <Icons.Check /> : <Icons.Dash />}<span>{label}{ok ? '' : ' — treba doplniť'}</span>
+                            {ok ? <Icons.Check /> : <Icons.Dash />}<span>{label}{ok ? '' : ' — needs to be added'}</span>
                           </li>;
                         })}
                       </ul>
-                      {promptReview.unclear_tasks?.length > 0 && <div className="p2f-review__note is-warn"><strong>Nejasné úlohy:</strong> {promptReview.unclear_tasks.join(' · ')}</div>}
-                      {promptReview.suggestions?.length > 0 && <div className="p2f-review__note"><strong>Tipy:</strong> {promptReview.suggestions.slice(0, 3).join(' · ')}</div>}
+                      {promptReview.unclear_tasks?.length > 0 && <div className="p2f-review__note is-warn"><strong>Unclear tasks:</strong> {promptReview.unclear_tasks.join(' · ')}</div>}
+                      {promptReview.suggestions?.length > 0 && <div className="p2f-review__note"><strong>Tips:</strong> {promptReview.suggestions.slice(0, 3).join(' · ')}</div>}
                     </div>}
                   </div>}
                 </div>
@@ -2317,40 +2318,40 @@ function App() {
           </div>
 
           {composerMode === 'create' ? <form className="p2f-composer__form" onSubmit={(event) => { event.preventDefault(); loadModel(); }}>
-            <label className="p2f-composer__mode" htmlFor="p2f-assistant-input">Nový proces</label>
-            <textarea id="p2f-assistant-input" ref={assistantInputRef} className="p2f-composer__input" rows={1} value={promptText} onKeyDown={submitOnModEnter} onChange={(event) => { setAdviceMode('prompt'); setDiagramReview(''); setPromptText(event.target.value); }} placeholder={isComposerCollapsed ? 'Opíš proces, ktorý chceš vymodelovať…' : 'Opíš proces: ako sa začína, aké kroky nasledujú, kto ich vykonáva a kde sa rozhoduje…'} />
+            <label className="p2f-composer__mode" htmlFor="p2f-assistant-input">New process</label>
+            <textarea id="p2f-assistant-input" ref={assistantInputRef} className="p2f-composer__input" rows={1} value={promptText} onKeyDown={submitOnModEnter} onChange={(event) => { setAdviceMode('prompt'); setDiagramReview(''); setPromptText(event.target.value); }} placeholder={isComposerCollapsed ? 'Describe the process you want to model…' : 'Describe the process: how it starts, which steps follow, who performs them and where decisions are made…'} />
             <div className="p2f-composer__options">
-              <label className="p2f-option">Kroky <input type="number" min="1" className="p2f-num" value={minNodes} onChange={(event) => setMinNodes(event.target.value)} aria-label="Minimálny počet krokov" /><span aria-hidden="true">–</span><input type="number" min="2" className="p2f-num" value={maxNodes} onChange={(event) => setMaxNodes(event.target.value)} aria-label="Maximálny počet krokov" /></label>
-              <label className="p2f-option p2f-option--check"><input type="checkbox" checked={includeKpi} onChange={(event) => setIncludeKpi(event.target.checked)} /> Odhadnúť čas a náklady</label>
+              <label className="p2f-option">Steps <input type="number" min="1" className="p2f-num" value={minNodes} onChange={(event) => setMinNodes(event.target.value)} aria-label="Minimum number of steps" /><span aria-hidden="true">–</span><input type="number" min="2" className="p2f-num" value={maxNodes} onChange={(event) => setMaxNodes(event.target.value)} aria-label="Maximum number of steps" /></label>
+              <label className="p2f-option p2f-option--check"><input type="checkbox" checked={includeKpi} onChange={(event) => setIncludeKpi(event.target.checked)} /> Estimate time and cost</label>
             </div>
-            <button type="submit" className="p2f-btn p2f-btn--primary p2f-composer__submit" disabled={createDisabled}>{isLoading && <span className="p2f-spinner" aria-hidden="true" />}{isLoading ? 'Generujem…' : 'Vytvoriť diagram'}</button>
+            <button type="submit" className="p2f-btn p2f-btn--primary p2f-composer__submit" disabled={createDisabled}>{isLoading && <span className="p2f-spinner" aria-hidden="true" />}{isLoading ? 'Generating…' : 'Create diagram'}</button>
           </form> : <form className="p2f-composer__form" onSubmit={(event) => { event.preventDefault(); editDiagramWithAI(); }}>
-            <label className="p2f-composer__mode" htmlFor="p2f-assistant-input">Úprava diagramu</label>
-            <textarea id="p2f-assistant-input" ref={assistantInputRef} className="p2f-composer__input" rows={1} value={copilotPrompt} onKeyDown={submitOnModEnter} onChange={(event) => { setCopilotPrompt(event.target.value); }} placeholder={isComposerCollapsed ? 'Opíš zmenu, ktorú má AI urobiť v diagrame…' : "Example: After 'Select vegetables', add 'Packaging' (actor: Customer), duration 1 minute, cost 0.50 EUR. Connect it to the next step and preserve the rest of the diagram. Or: Rename 'Review order' to 'Check order details' and keep all connections unchanged."} />
+            <label className="p2f-composer__mode" htmlFor="p2f-assistant-input">Edit diagram</label>
+            <textarea id="p2f-assistant-input" ref={assistantInputRef} className="p2f-composer__input" rows={1} value={copilotPrompt} onKeyDown={submitOnModEnter} onChange={(event) => { setCopilotPrompt(event.target.value); }} placeholder={isComposerCollapsed ? 'Describe the change the AI should make to the diagram…' : "Example: After 'Select vegetables', add 'Packaging' (actor: Customer), duration 1 minute, cost 0.50 EUR. Connect it to the next step and preserve the rest of the diagram. Or: Rename 'Review order' to 'Check order details' and keep all connections unchanged."} />
             <div className="p2f-composer__options p2f-composer__options--buttons">
-              <button type="button" className="p2f-btn p2f-btn--sm" onClick={toggleActors}>{showActors ? 'Skryť roly v názvoch' : 'Zobraziť roly'}</button>
-              <button type="button" className="p2f-btn p2f-btn--sm" onClick={undo} title="Späť (Ctrl+Z)"><Icons.Undo /> Späť</button>
-              <button type="button" className="p2f-btn p2f-btn--sm" onClick={redo} title="Vpred (Ctrl+Y)"><Icons.Redo /> Vpred</button>
+              <button type="button" className="p2f-btn p2f-btn--sm" onClick={toggleActors}>{showActors ? 'Hide roles in names' : 'Show roles'}</button>
+              <button type="button" className="p2f-btn p2f-btn--sm" onClick={undo} title="Undo (Ctrl+Z)"><Icons.Undo /> Undo</button>
+              <button type="button" className="p2f-btn p2f-btn--sm" onClick={redo} title="Redo (Ctrl+Y)"><Icons.Redo /> Redo</button>
             </div>
-            <button type="submit" className="p2f-btn p2f-btn--primary p2f-composer__submit" disabled={copilotDisabled}>{isCopilotLoading && <span className="p2f-spinner" aria-hidden="true" />}{isCopilotLoading ? 'Upravujem…' : 'Použiť zmeny'}</button>
+            <button type="submit" className="p2f-btn p2f-btn--primary p2f-composer__submit" disabled={copilotDisabled}>{isCopilotLoading && <span className="p2f-spinner" aria-hidden="true" />}{isCopilotLoading ? 'Editing…' : 'Apply changes'}</button>
           </form>}
         </section>
 
         {showToolsPanel && <>
-          <button type="button" className="p2f-sheet-backdrop" aria-label="Zavrieť doplnkové funkcie" onClick={() => setShowToolsPanel(false)} />
-          <aside className="p2f-sheet" aria-label="Doplnkové funkcie a export">
-            <div className="p2f-sheet__head"><strong className="p2f-sheet__title">Doplnkové funkcie</strong><button type="button" className="p2f-icon-btn" onClick={() => setShowToolsPanel(false)} aria-label="Zavrieť"><Icons.Close /></button></div>
-            <div className="p2f-sheet__group"><SidebarButton icon={Icons.Save} label="Uložiť diagram" onClick={() => { setShowToolsPanel(false); saveToCatalog(); }} variant="success" fullWidth /><SidebarButton icon={Icons.Folder} label="Otvoriť katalóg" onClick={() => { setShowToolsPanel(false); openCatalog(); }} fullWidth /><SidebarButton icon={Icons.Info} label="Návod na použitie" onClick={() => { setShowToolsPanel(false); setShowInfoModal(true); }} fullWidth /></div>
+          <button type="button" className="p2f-sheet-backdrop" aria-label="Close more tools" onClick={() => setShowToolsPanel(false)} />
+          <aside className="p2f-sheet" aria-label="More tools and export">
+            <div className="p2f-sheet__head"><strong className="p2f-sheet__title">More tools</strong><button type="button" className="p2f-icon-btn" onClick={() => setShowToolsPanel(false)} aria-label="Close"><Icons.Close /></button></div>
+            <div className="p2f-sheet__group"><SidebarButton icon={Icons.Save} label="Save diagram" onClick={() => { setShowToolsPanel(false); saveToCatalog(); }} variant="success" fullWidth /><SidebarButton icon={Icons.Folder} label="Open catalog" onClick={() => { setShowToolsPanel(false); openCatalog(); }} fullWidth /><SidebarButton icon={Icons.Info} label="User guide" onClick={() => { setShowToolsPanel(false); setShowInfoModal(true); }} fullWidth /></div>
             <div className="p2f-sheet__section">
               <div className="p2f-sheet__section-title">Export</div>
               <div className="p2f-export-grid">
-                <button type="button" className="p2f-export" onClick={() => handleDownload('png')}><strong>PNG</strong><span>Obrázok</span></button>
-                <button type="button" className="p2f-export" onClick={() => handleDownload('jpg')}><strong>JPG</strong><span>Obrázok</span></button>
+                <button type="button" className="p2f-export" onClick={() => handleDownload('png')}><strong>PNG</strong><span>Image</span></button>
+                <button type="button" className="p2f-export" onClick={() => handleDownload('jpg')}><strong>JPG</strong><span>Image</span></button>
                 <button type="button" className="p2f-export" onClick={handleDownloadBpmn}><strong>BPMN</strong><span>BPMN 2.0 XML</span></button>
-                <button type="button" className="p2f-export" onClick={handleDownloadUml}><strong>XMI</strong><span>UML aktivita</span></button>
+                <button type="button" className="p2f-export" onClick={handleDownloadUml}><strong>XMI</strong><span>UML activity</span></button>
                 <button type="button" className="p2f-export" onClick={handleDownloadUxf}><strong>UXF</strong><span>UMLet</span></button>
               </div>
-              <p className="p2f-sheet__note">Pred stiahnutím musí byť diagram uložený v archíve.</p>
+              <p className="p2f-sheet__note">The diagram must be saved in the catalog before downloading.</p>
             </div>
           </aside>
         </>}
