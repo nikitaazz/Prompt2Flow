@@ -442,6 +442,9 @@ Create a JSON model of a business process. Your ONLY task is to return syntactic
 
 Structure you must follow strictly:
 {{
+  "roles": [
+    {{"name": "Role", "source": "the role exactly as written in the description"}}
+  ],
   "activities": [
     {{"n": 1, "text": "Activity from the description", "actor": "Role"}},
     {{"n": 2, "text": "Next activity", "actor": "Role"}}
@@ -463,6 +466,8 @@ Structure you must follow strictly:
 }}
 
 PROCEDURE:
+0. In "roles", list every role/actor stated in the description: "name" = the role in English, "source" = the same role copied
+   word for word from the description (in its original language and form). Every "actor" below must be one of these English names.
 A. In "activities", list ALL activities from the description in the order in which they happen. Each activity separately – even when one sentence
    contains several (e.g. "cuts the wood, glues and sands the board" = 3 activities). Do not omit or invent anything. Decisions ("approves or rejects", "if…") are activities too.
 B. Then create the nodes. EVERY activity from "activities" must be covered by a node of type "task" (field "covers" = the activity numbers "n").
@@ -478,9 +483,10 @@ C. The number of nodes of type "task" MUST be between {min_nodes} and {max_nodes
 
 ACCURACY (most important):
 - The diagram must faithfully match the description: the same activities, the same order, the same decision conditions. Add nothing, remove nothing.
-- Phrase step names using the words of the description (the same verb and object), briefly, as an activity name starting with a capital
+- LANGUAGE: write ALL "label", "text" and "actor" values (steps, gateway questions, branch conditions, roles) in ENGLISH,
+  even when the description is written in another language (e.g. Slovak) – translate them faithfully. Only "roles[].source" keeps the original wording.
+- Phrase step names from the description (the same verb and object, translated to English if needed), briefly, as an activity name starting with a capital
   letter (e.g. "Check product availability", "Ship goods to the customer"). Do not change their meaning.
-- Write all labels, activities and roles in the same language as the process description.
 - "actor" may ONLY be a role that is explicitly stated in the description (or unambiguously follows from the sentence, e.g. the subject of the previous sentence).
   NEVER invent new roles or departments. If the description does not say who performs an activity, set "actor": null.
 - A gateway has the role of whoever decides according to the description; if the description does not say, "actor": null.
@@ -611,7 +617,7 @@ Process description:
             repaired = edit_diagram_with_ai(instruction, current)
             if not any(n.label == AI_ERROR_LABEL for n in repaired.nodes) and len(repaired.nodes) >= len(model.nodes):
                 model = repaired
-        return _ground_actors(model, description)
+        return _ground_actors(model, description, _role_sources(diagram))
 
     except Exception as exc:
         print(f"💥 ERROR: {exc}")
@@ -624,10 +630,26 @@ def _actor_in_text(actor: str, text_ascii: str) -> bool:
     return bool(words) and all(re.search(r"\b" + re.escape(w[:5]), text_ascii) for w in words)
 
 
-def _ground_actors(model: ProcessModel, description: str) -> ProcessModel:
-    """The AI must not invent roles: a role missing from the description is removed (the step goes to the "No role" lane)."""
+def _role_sources(diagram: dict) -> Dict[str, str]:
+    """English role name → the role's original wording in the description (from the "roles" list)."""
+    sources = {}
+    for role in diagram.get("roles") or []:
+        if isinstance(role, dict) and str(role.get("name") or "").strip() and str(role.get("source") or "").strip():
+            sources[_ascii(role["name"])] = str(role["source"])
+    return sources
+
+
+def _ground_actors(model: ProcessModel, description: str, role_sources: Optional[Dict[str, str]] = None) -> ProcessModel:
+    """The AI must not invent roles: a role missing from the description is removed (the step goes to the "No role" lane).
+    Roles are written in English, so a translated role is checked through its original wording from the description."""
     text_ascii = _ascii(description)
-    invented = sorted({n.actor for n in model.nodes if n.actor and not _actor_in_text(n.actor, text_ascii)})
+    role_sources = role_sources or {}
+
+    def grounded(actor: str) -> bool:
+        source = role_sources.get(_ascii(actor))
+        return _actor_in_text(actor, text_ascii) or bool(source and _actor_in_text(source, text_ascii))
+
+    invented = sorted({n.actor for n in model.nodes if n.actor and not grounded(n.actor)})
     if invented:
         print(f"🧹 Removed invented roles: {', '.join(invented)}")
     nodes = [n.copy(update={"actor": None}) if n.actor in invented else n for n in model.nodes]
@@ -1326,7 +1348,7 @@ RULES (MUST BE FOLLOWED STRICTLY):
 6. Every gateway must have at least 2 outgoing edges with a filled-in label.
 7. The last element of a list MUST NOT be followed by a comma!
 8. Return ONLY valid JSON without any text before or after it.
-9. Write new labels and roles in the same language as the existing diagram.
+9. Write all new and changed labels, conditions and roles in English, even if the user's request is written in another language.
 
 RULES FOR CARRYING OUT THE REQUEST PRECISELY:
 10. First identify the target node by its name (label); do not change another node just because it has a similar name.

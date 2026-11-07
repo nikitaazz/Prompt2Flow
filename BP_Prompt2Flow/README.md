@@ -63,7 +63,7 @@
 
 After a short pause in typing, the Groq API checks whether the description contains a process overview, ordered activities and a list of actors. It also lists the specific steps where it is unclear who performs them, and may ask up to three clarifying questions; the chosen answer is appended to the description as a `Clarification:` line. All AI features use the Groq API; set `GROQ_API_KEY` in `.env`.
 
-The user interface is in English. Diagram labels are written in the language of the process description.
+The user interface and the generated diagrams are in English, even when the process is described in another language (e.g. Slovak).
 
 ### Generating a diagram
 
