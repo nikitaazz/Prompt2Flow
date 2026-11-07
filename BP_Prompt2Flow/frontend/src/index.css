@@ -590,6 +590,13 @@ select.p2f-field { padding-right: 8px; cursor: pointer; }
 .p2f-checklist li svg { flex: none; margin-top: 3px; }
 .p2f-checklist li.is-ok { color: var(--ok); }
 .p2f-checklist li.is-missing { color: var(--warn); }
+.p2f-checklist { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 14px; }
+@media (max-width: 640px) { .p2f-checklist { grid-template-columns: 1fr; } }
+
+/* Five-step guide shown before the description is reviewed */
+.p2f-guide { display: grid; gap: 4px; }
+.p2f-guide__steps { display: grid; gap: 2px; margin: 0; padding-left: 18px; }
+.p2f-guide__steps strong { color: var(--ink); font-weight: 600; }
 
 /* AI questions about the process description */
 .p2f-questions { display: flex; flex-direction: column; gap: 8px; margin: 0 12px 12px; }

@@ -118,6 +118,23 @@ const EmptyIllustration = () => (
   </svg>
 );
 
+// The five steps of a good process description – the AI review checks the description against them
+const DESCRIPTION_STEPS = [
+  { key: 'trigger_defined', label: 'Triggering event', hint: 'what starts the process' },
+  { key: 'activities_identified', label: 'Main activities', hint: 'the tasks, one per item, in order' },
+  { key: 'roles_specified', label: 'Responsible roles', hint: 'who performs each task' },
+  { key: 'resources_identified', label: 'Resources and documents', hint: 'forms, systems and documents used' },
+  { key: 'outcome_defined', label: 'Expected outcome', hint: 'how the process ends' },
+];
+const DESCRIPTION_EXAMPLE = [
+  'Describe the process as a numbered list, for example:',
+  'The process starts when a customer submits an order form.',
+  '1. The sales clerk checks the order form in the CRM system.',
+  '2. If the goods are in stock, the warehouse worker packs them; otherwise the sales clerk informs the customer.',
+  '3. The courier delivers the goods with the delivery note.',
+  'The process ends when the customer receives the goods.',
+].join('\n');
+
 const DURATION_UNITS = [
   { label: 'min',  toMin: 1       },
   { label: 'h',    toMin: 60      },
@@ -244,6 +261,19 @@ function InfoModal({ onClose }) {
             Describe the process in the main window and click Create diagram. To change an existing diagram,
             switch to the Manage diagram tab, where you will find AI editing as well as tools for working with nodes.
           </p>
+
+          <h3>Writing a good process description</h3>
+          <p>
+            Describe the process in five steps, ideally with the activities as a numbered list. The AI checks the
+            description against these steps while you type and tells you what is missing.
+          </p>
+          <ol>
+            <li><strong>Define the event that triggers the process</strong> – avoids missing start conditions.</li>
+            <li><strong>Identify the main activities and tasks</strong> – avoids unstructured descriptions and insufficient detail.</li>
+            <li><strong>Specify the responsible employees</strong> – avoids missing roles.</li>
+            <li><strong>Identify the resources and documents used</strong> – helps distinguish activities from related information.</li>
+            <li><strong>Define the expected outcome</strong> – avoids unclear process completion.</li>
+          </ol>
 
           <h3>Basic editing</h3>
           <p>
@@ -2289,22 +2319,24 @@ function App() {
                 <div className="p2f-advice" data-tone={adviceMode === 'diagram' ? 'diagram' : 'prompt'} aria-live="polite">
                   <div className="p2f-advice__title"><span className={`p2f-advice__dot${isAdviceBusy ? ' is-busy' : ''}`} />{adviceMode === 'diagram' ? (composerMode === 'manage' ? 'AI suggestions for changing the diagram' : 'AI diagram review') : composerMode === 'manage' ? 'Diagram editing suggestions' : 'Tips for the process description'}{adviceMode === 'diagram' && isDiagramReviewLoading && <span className="p2f-advice__status">· analysing</span>}</div>
                   {adviceMode === 'diagram' ? <div className="p2f-advice__body">{isDiagramReviewLoading ? (composerMode === 'manage' ? 'The AI is looking for concrete ways to improve the diagram…' : 'Checking steps, decisions and ways to simplify the process…') : diagramReview || 'The diagram review is not available yet.'}</div> : composerMode === 'manage' ? <div className="p2f-advice__muted">Describe a concrete change to the existing diagram. The AI changes only the requested steps and keeps the rest of the process.</div> : <div className="p2f-advice__muted">
-                    {promptReviewStatus === 'idle' && 'Describe the process. Recommendations appear here; after generation the AI reviews the diagram.'}
-                    {promptReviewStatus === 'waiting' && 'Add who performs each step and where decisions are made.'}
+                    {(promptReviewStatus === 'idle' || promptReviewStatus === 'waiting') && <div className="p2f-guide">
+                      <div>Describe the process in five steps, ideally as a numbered list:</div>
+                      <ol className="p2f-guide__steps">
+                        {DESCRIPTION_STEPS.map((step) => <li key={step.key}><strong>{step.label}</strong> – {step.hint}</li>)}
+                      </ol>
+                    </div>}
                     {promptReviewStatus === 'loading' && 'Groq is reviewing the description…'}
                     {promptReviewStatus === 'error' && promptReviewError}
                     {promptReviewStatus === 'ready' && promptReview && <div className="p2f-review">
                       <div className="p2f-review__summary">{promptReview.overall_review}</div>
                       <ul className="p2f-checklist">
                         {[
-                          ['overview_present', 'The process overview is clear'],
-                          ['steps_ordered', 'The order of steps is clear'],
-                          ['actors_listed', 'The actors are listed'],
-                          ['actor_assignments_clear', 'It is clear who performs each task'],
+                          ...DESCRIPTION_STEPS.map((step) => [step.key, step.label]),
+                          ['numbered_list', 'Written as a numbered list'],
                         ].map(([key, label]) => {
                           const ok = Boolean(promptReview[key]);
                           return <li key={key} className={ok ? 'is-ok' : 'is-missing'}>
-                            {ok ? <Icons.Check /> : <Icons.Dash />}<span>{label}{ok ? '' : ' — needs to be added'}</span>
+                            {ok ? <Icons.Check /> : <Icons.Dash />}<span>{label}{ok ? '' : key === 'numbered_list' ? ' — recommended' : ' — missing'}</span>
                           </li>;
                         })}
                       </ul>
@@ -2319,7 +2351,7 @@ function App() {
 
           {composerMode === 'create' ? <form className="p2f-composer__form" onSubmit={(event) => { event.preventDefault(); loadModel(); }}>
             <label className="p2f-composer__mode" htmlFor="p2f-assistant-input">New process</label>
-            <textarea id="p2f-assistant-input" ref={assistantInputRef} className="p2f-composer__input" rows={1} value={promptText} onKeyDown={submitOnModEnter} onChange={(event) => { setAdviceMode('prompt'); setDiagramReview(''); setPromptText(event.target.value); }} placeholder={isComposerCollapsed ? 'Describe the process you want to model…' : 'Describe the process: how it starts, which steps follow, who performs them and where decisions are made…'} />
+            <textarea id="p2f-assistant-input" ref={assistantInputRef} className="p2f-composer__input" rows={1} value={promptText} onKeyDown={submitOnModEnter} onChange={(event) => { setAdviceMode('prompt'); setDiagramReview(''); setPromptText(event.target.value); }} placeholder={isComposerCollapsed ? 'Describe the process you want to model…' : DESCRIPTION_EXAMPLE} />
             <div className="p2f-composer__options">
               <label className="p2f-option">Steps <input type="number" min="1" className="p2f-num" value={minNodes} onChange={(event) => setMinNodes(event.target.value)} aria-label="Minimum number of steps" /><span aria-hidden="true">–</span><input type="number" min="2" className="p2f-num" value={maxNodes} onChange={(event) => setMaxNodes(event.target.value)} aria-label="Maximum number of steps" /></label>
               <label className="p2f-option p2f-option--check"><input type="checkbox" checked={includeKpi} onChange={(event) => setIncludeKpi(event.target.checked)} /> Estimate time and cost</label>

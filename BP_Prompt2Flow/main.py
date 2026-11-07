@@ -130,15 +130,17 @@ class ReviewQuestion(BaseModel):
 
 
 class PromptReviewResponse(BaseModel):
-    overall_review: str
-    structure_ok: bool
-    overview_present: bool
-    steps_ordered: bool
-    actors_listed: bool
-    structure_feedback: str
-    actor_assignments_clear: bool
-    unclear_tasks: List[str]
-    suggestions: List[str]
+    """Review of a process description along the five recommended description steps."""
+    overall_review: str = ""
+    trigger_defined: bool = False          # 1. event that triggers the process
+    activities_identified: bool = False    # 2. main activities and tasks
+    roles_specified: bool = False          # 3. responsible employees
+    resources_identified: bool = False     # 4. resources and documents used
+    outcome_defined: bool = False          # 5. expected outcome
+    numbered_list: bool = False            # the description is written as a numbered list
+    actor_assignments_clear: bool = False
+    unclear_tasks: List[str] = []
+    suggestions: List[str] = []
     activity_count: int = 0
     questions: List[ReviewQuestion] = []
 
@@ -450,11 +452,11 @@ Structure you must follow strictly:
     {{"n": 2, "text": "Next activity", "actor": "Role"}}
   ],
   "nodes": [
-    {{"id": "start", "type": "startEvent", "label": "Process start"}},
+    {{"id": "start", "type": "startEvent", "label": "Triggering event"}},
     {{"id": "t1", "type": "task", "label": "Task name", "actor": "Role", "covers": [1]}},
     {{"id": "gw1", "type": "gateway", "label": "Decision?", "actor": "Role"}},
     {{"id": "t2", "type": "task", "label": "Task name", "actor": "Role", "covers": [2]}},
-    {{"id": "end", "type": "endEvent", "label": "Process end"}}
+    {{"id": "end", "type": "endEvent", "label": "Expected outcome"}}
   ],
   "edges": [
     {{"id": "e1", "source": "start", "target": "t1"}},
@@ -465,11 +467,16 @@ Structure you must follow strictly:
   ]
 }}
 
-PROCEDURE:
+PROCEDURE – read the description along five steps:
+  (1) the event that triggers the process, (2) the main activities and tasks, (3) the responsible roles,
+  (4) the resources and documents used, (5) the expected outcome.
+  If the description is a numbered list, each numbered item is normally one activity, in that order.
 0. In "roles", list every role/actor stated in the description: "name" = the role in English, "source" = the same role copied
    word for word from the description (in its original language and form). Every "actor" below must be one of these English names.
 A. In "activities", list ALL activities from the description in the order in which they happen. Each activity separately – even when one sentence
    contains several (e.g. "cuts the wood, glues and sands the board" = 3 activities). Do not omit or invent anything. Decisions ("approves or rejects", "if…") are activities too.
+   Resources and documents (forms, invoices, systems, tools) are NOT activities on their own – mention them in the name of the activity
+   that uses or produces them (e.g. "Fill in the order form"). The triggering event and the expected outcome are NOT activities either.
 B. Then create the nodes. EVERY activity from "activities" must be covered by a node of type "task" (field "covers" = the activity numbers "n").
    - If, according to the description, someone actively decides ("the manager approves or rejects"), that is a "task" (the decision-making) followed by a "gateway" with branches.
    - If it is only a condition ("if the goods are not in stock…"), put a "gateway" right after the step that determines the condition – DO NOT ADD an extra "decision" task.
@@ -496,6 +503,9 @@ ACCURACY (most important):
   - a condition under which part of the process is simply skipped (e.g. "Is approval needed?" → No) → continue to the first step after the skipped part,
   - to the end node only if this branch logically ends the process (e.g. final rejection, order cancellation).
   Do not invent new steps here either – connect the branch only to steps that already exist in the diagram.
+- START and END: the startEvent "label" is the triggering event from the description, briefly (e.g. "Invoice received"); the endEvent "label"
+  is the expected outcome (e.g. "Invoice paid"). If the description does not state them, use "Process start" / "Process end".
+  If a branch ends the process with a different result (e.g. rejection), it still goes to the same end node; the edge label states the result.
 - Lines starting with "Clarification:" are the user's answers to questions – they take precedence over the rest of the text.
 
 RULES:
@@ -1025,11 +1035,12 @@ def review_prompt(input: PromptReviewRequest) -> PromptReviewResponse:
     review_instructions = """Review the business process description and return only one JSON object with the fields:
 {
   "overall_review": "short overall assessment in English",
-  "structure_ok": true,
-  "overview_present": true,
-  "steps_ordered": true,
-  "actors_listed": true,
-  "structure_feedback": "whether the process overview is clear and the order of steps understandable",
+  "trigger_defined": true,
+  "activities_identified": true,
+  "roles_specified": true,
+  "resources_identified": false,
+  "outcome_defined": false,
+  "numbered_list": false,
   "actor_assignments_clear": false,
   "unclear_tasks": ["a concrete step whose performer is unclear"],
   "suggestions": ["a concrete recommendation for completing the description"],
@@ -1042,16 +1053,31 @@ def review_prompt(input: PromptReviewRequest) -> PromptReviewResponse:
   ]
 }
 
+A good process description follows five steps. Judge the description against each of them:
+1. trigger_defined – the event that triggers the process is defined (prevents missing start conditions),
+   e.g. "The process starts when a customer submits an order".
+2. activities_identified – the main activities and tasks are identified as separate, concrete actions in a clear order
+   (prevents unstructured descriptions and insufficient detail).
+3. roles_specified – the responsible employees/roles are specified for the activities (prevents missing roles).
+4. resources_identified – the resources and documents used are named (e.g. invoice, order form, accounting system);
+   this helps to distinguish the activities themselves from related information.
+5. outcome_defined – the expected outcome / end state of the process is defined (prevents unclear process completion),
+   e.g. "The process ends when the invoice is paid".
+In addition, numbered_list – the activities are written as a numbered list (1., 2., 3. …), which is the recommended form.
+
 Review rules:
-1. Judge whether the description contains a general overview of the problem or process.
-2. Judge whether the activities are numbered or otherwise clearly ordered.
-3. Judge whether the actors are listed (for example in an "Actors" section).
-4. For each activity check whether the text makes it unambiguous who performs it. The unclear_tasks list may only contain concrete unclear activities quoted or briefly named from the description. Do not invent actors.
-5. If the description is short or still being written, phrase the review as an interim one and suggest the most important additions. Be factual, brief and encouraging.
-6. Respond in English, keep people's names and do not judge grammar.
-7. activity_count: the number of separate activities in the description (several activities in one sentence count separately; a decision is an activity too).
-8. questions: at most 3 questions that would clarify the diagram the most – only if the description is genuinely ambiguous
-   (who performs an activity, what happens in an undescribed decision branch, unclear order). If the description is clear, return an empty list.
+1. Mark each of the five steps true only if the description really covers it; do not guess.
+2. For each activity check whether the text makes it unambiguous who performs it (actor_assignments_clear). The unclear_tasks list may only contain
+   concrete unclear activities quoted or briefly named from the description. Do not invent actors.
+3. suggestions: at most 3 concrete, short recommendations, ordered by importance, each addressing one missing step above
+   (e.g. "Add what triggers the process, e.g. 'The process starts when …'"). If the activities are not a numbered list, recommend
+   rewriting them as a numbered list. Do not repeat what the description already contains.
+4. overall_review: 1–2 sentences. If the description is short or still being written, phrase it as an interim review. Be factual, brief and encouraging.
+5. Respond in English, keep people's names and do not judge grammar.
+6. activity_count: the number of separate activities in the description (several activities in one sentence count separately; a decision is an activity too).
+7. questions: at most 3 questions that would clarify the diagram the most – only if the description is genuinely ambiguous or a step above is missing
+   (what triggers the process, who performs an activity, what happens in an undescribed decision branch, what the expected outcome is).
+   If the description is clear and complete, return an empty list.
    Give 2–3 options for each question; "clarification" is a full sentence that gets appended to the description, written in the same language as the description.
    Take options primarily from roles and activities the description already contains. Do not ask about time, costs or things a "Clarification:" line has already answered."""
 
