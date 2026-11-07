@@ -2262,9 +2262,9 @@ function App() {
       { label: `Raise the maximum to ${count}`, apply: () => setMaxNodes(String(count)) },
       { label: 'Merge related steps', apply: () => {} },
     ] };
-    if (count < min) return { key: 'range', isRange: true, question: `The description contains only ${count} activities, but the minimum is ${min} steps. How should we proceed?`, options: [
+    if (count < min) return { key: 'range', isRange: true, question: `The description contains only ${count} activities, but the minimum is ${min} steps. The AI will not invent extra steps, so the diagram will have about ${count}.`, options: [
       { label: `Lower the minimum to ${count}`, apply: () => setMinNodes(String(Math.max(1, count))) },
-      { label: 'Split activities into sub-steps', apply: () => {} },
+      { label: 'OK, keep it', apply: () => {} },
     ] };
     return null;
   })();
