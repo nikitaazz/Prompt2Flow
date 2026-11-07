@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "backend",
-      "runtimeExecutable": "venv/Scripts/python.exe",
-      "runtimeArgs": ["-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "8000"],
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "uvicorn", "main:app", "--reload", "--host", "127.0.0.1", "--port", "8000"],
       "port": 8000
     },
     {

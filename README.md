@@ -65,7 +65,7 @@ The frontend runs at `http://localhost:5173`.
 
 ## 📚 Documentation
 
-The full user guide (in Slovak) is in [`BP_Prompt2Flow/README.md`](BP_Prompt2Flow/README.md).
+The full user guide is in [`BP_Prompt2Flow/README.md`](BP_Prompt2Flow/README.md).
 
 ## 👤 Author
 

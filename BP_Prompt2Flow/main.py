@@ -25,7 +25,7 @@ for output_stream in (sys.stdout, sys.stderr):
 
 app = FastAPI()
 
-print(">>> Nacitavam main.py (so zabezpecenim + kategoriami + Postgres/SQLite podpora)")
+print(">>> Loading main.py (auth + categories + Postgres/SQLite support)")
 
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,https://bp-t2-m-fast-api-project.vercel.app")
 origins_list = list(dict.fromkeys([
@@ -43,33 +43,50 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─── KATEGÓRIE ────────────────────────────────────────────────
+# ─── CATEGORIES ───────────────────────────────────────────────
+DEFAULT_CATEGORY = "Other"
 PREDEFINED_CATEGORIES = [
-  "Financie",
-  "Hospodárstvo",
+  "Finance",
+  "Economy",
   "HR",
   "IT",
   "Marketing",
-  "Operácie",
-  "Právo",
-  "Služby",
-  "Školstvo",
-  "Šport",
-  "Územné celky",
-  "Zákaznícky servis",
-  "Zdravotníctvo",
-  "Iné",
+  "Operations",
+  "Law",
+  "Services",
+  "Education",
+  "Sport",
+  "Local government",
+  "Customer service",
+  "Healthcare",
+  DEFAULT_CATEGORY,
 ]
 
-# ─── BEZPEČNOSŤ ───────────────────────────────────────────────
+# Categories saved by the earlier Slovak version of the app; migrated to English on startup.
+LEGACY_CATEGORY_NAMES = {
+  "Financie": "Finance",
+  "Hospodárstvo": "Economy",
+  "Operácie": "Operations",
+  "Právo": "Law",
+  "Služby": "Services",
+  "Školstvo": "Education",
+  "Šport": "Sport",
+  "Územné celky": "Local government",
+  "Zákaznícky servis": "Customer service",
+  "Zdravotníctvo": "Healthcare",
+  "Iné": DEFAULT_CATEGORY,
+}
+ALL_CATEGORIES_FILTER = ("", "All")
+
+# ─── SECURITY ─────────────────────────────────────────────────
 SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 if not SECRET_KEY:
-    raise RuntimeError("❌ JWT_SECRET_KEY nie je nastavený v .env!")
+    raise RuntimeError("❌ JWT_SECRET_KEY is not set in .env!")
 ALGORITHM = "HS256"
 
 
 
-# ─── PYDANTIC MODELY ──────────────────────────────────────────
+# ─── PYDANTIC MODELS ──────────────────────────────────────────
 class Node(BaseModel):
     id: str
     type: str
@@ -110,18 +127,32 @@ class ReviewOption(BaseModel):
 class ReviewQuestion(BaseModel):
     question: str
     options: List[ReviewOption] = []
+    target: str = ""          # which part of the structure it clarifies: "step:<n>", "trigger", "roles", "outcome", "resources"
+    target_label: str = ""    # human-readable form of the target, e.g. "Step 2 – Approve request"
+
+
+class StepCheck(BaseModel):
+    """The AI's verdict on one step of the step-by-step description."""
+    number: str = ""
+    text: str
+    clear: bool = True
+    issue: str = ""
 
 
 class PromptReviewResponse(BaseModel):
-    overall_review: str
-    structure_ok: bool
-    overview_present: bool
-    steps_ordered: bool
-    actors_listed: bool
-    structure_feedback: str
-    actor_assignments_clear: bool
-    unclear_tasks: List[str]
-    suggestions: List[str]
+    """Review of a process description written as a short overview followed by a step-by-step description."""
+    overall_review: str = ""
+    overview_present: bool = False         # short description of the process in the user's own words
+    steps_listed: bool = False             # step-by-step description (numbered steps)
+    step_checks: List[StepCheck] = []      # is each step understandable to the AI?
+    trigger_defined: bool = False          # what starts the process
+    activities_identified: bool = False    # main activities and tasks
+    roles_specified: bool = False          # responsible employees
+    resources_identified: bool = False     # resources and documents used
+    outcome_defined: bool = False          # expected outcome
+    actor_assignments_clear: bool = False
+    unclear_tasks: List[str] = []
+    suggestions: List[str] = []
     activity_count: int = 0
     questions: List[ReviewQuestion] = []
 
@@ -133,9 +164,9 @@ class DiagramAccuracyRequest(BaseModel):
 
 class AccuracyRequirement(BaseModel):
     text: str
-    category: str = "krok"
+    category: str = "step"
     importance: int = Field(2, ge=1, le=3)
-    status: Literal["splnene", "ciastocne", "chyba"] = "chyba"
+    status: Literal["met", "partial", "missing"] = "missing"
     evidence: str = ""
 
 
@@ -164,7 +195,7 @@ class SpecialistInfo(BaseModel):
 
 class ToolInfo(BaseModel):
     name: str
-    kind: str = "nástroj"
+    kind: str = "tool"
     purpose: str = ""
     steps: List[str] = []
 
@@ -203,7 +234,7 @@ class CatalogSaveRequest(BaseModel):
     final_node_count: int
     model_json: dict
     is_public: bool = False
-    category: str = "Iné"
+    category: str = DEFAULT_CATEGORY
 
 
 class VisibilityUpdate(BaseModel):
@@ -234,15 +265,15 @@ if DB_URL:
     from psycopg2.extras import RealDictCursor
 
     USE_POSTGRES = True
-    print("✅ Používam PostgreSQL")
+    print("✅ Using PostgreSQL")
 else:
     import sqlite3
 
     USE_POSTGRES = False
     DB_PATH = "process_catalog.db"
-    print("⚠️ DATABASE_URL nie je v .env. Používam lokálne SQLite.")
+    print("⚠️ DATABASE_URL is not set in .env. Using local SQLite.")
 
-# Pomocné premenné na riešenie rozdielov v syntaxi (Postgres %s, SQLite ?)
+# Placeholder that hides the SQL syntax difference (Postgres %s, SQLite ?)
 PARAM_MARKER = "%s" if USE_POSTGRES else "?"
 
 
@@ -271,7 +302,7 @@ def init_db():
             final_node_count INTEGER NOT NULL,
             model_json TEXT NOT NULL,
             is_public BOOLEAN DEFAULT FALSE,
-            category VARCHAR(255) DEFAULT 'Iné',
+            category VARCHAR(255) DEFAULT 'Other',
             created_at VARCHAR(255) NOT NULL,
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         )
@@ -300,29 +331,34 @@ def init_db():
             final_node_count INTEGER NOT NULL,
             model_json TEXT NOT NULL,
             is_public BOOLEAN DEFAULT 0,
-            category TEXT DEFAULT 'Iné',
+            category TEXT DEFAULT 'Other',
             created_at TEXT NOT NULL,
             FOREIGN KEY(user_id) REFERENCES users(id)
         )
         """)
         try:
-            cursor.execute("ALTER TABLE processes ADD COLUMN category TEXT DEFAULT 'Iné'")
-            print("✅ Migrácia: stĺpec 'category' pridaný")
+            cursor.execute("ALTER TABLE processes ADD COLUMN category TEXT DEFAULT 'Other'")
+            print("✅ Migration: column 'category' added")
         except sqlite3.OperationalError:
             pass
+
+    # Rename categories saved under their former Slovak names
+    for legacy_name, english_name in LEGACY_CATEGORY_NAMES.items():
+        cursor.execute(f"UPDATE processes SET category = {PARAM_MARKER} WHERE category = {PARAM_MARKER}",
+                       (english_name, legacy_name))
 
     conn.commit()
     cursor.close()
     conn.close()
-    print("✅ Databáza inicializovaná")
+    print("✅ Database initialised")
 
 
 from contextlib import contextmanager
 
 @contextmanager
 def get_db():
-    if DB_URL:  # ← DB_URL, nie DATABASE_URL
-        conn = psycopg2.connect(DB_URL)  # ← DB_URL
+    if DB_URL:  # ← DB_URL, not DATABASE_URL
+        conn = psycopg2.connect(DB_URL)
         conn.autocommit = False
         try:
             yield conn
@@ -347,12 +383,12 @@ def get_db():
 
 def get_cursor(conn):
     if USE_POSTGRES:
-        return conn.cursor(cursor_factory=RealDictCursor)  # ← RealDictCursor musí byť tu
+        return conn.cursor(cursor_factory=RealDictCursor)  # ← RealDictCursor is required here
     else:
         return conn.cursor()
 
 
-# ─── AUTH POMOCNÉ FUNKCIE ─────────────────────────────────────
+# ─── AUTH HELPERS ─────────────────────────────────────────────
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(
         plain_password.encode("utf-8"),
@@ -380,7 +416,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     token = credentials.credentials
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Neplatný token",
+        detail="Invalid token",
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
@@ -390,7 +426,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         if user_id is None or username is None:
             raise credentials_exception
     except jwt.PyJWTError as e:
-        print(f"Chyba dekódovania tokenu: {e}")
+        print(f"Token decoding error: {e}")
         raise credentials_exception
     return {"user_id": user_id, "username": username}
 
@@ -403,76 +439,98 @@ GROQ_MODEL = "openai/gpt-oss-120b"
 
 def generate_diagram_from_text(description: str, min_nodes: int, max_nodes: int,
                                include_kpi: bool = False) -> ProcessModel:
-    print(f"🎯 PROMPT: {description[:50]}... | Uzlov: {min_nodes} - {max_nodes}")
+    print(f"🎯 PROMPT: {description[:50]}... | Nodes: {min_nodes} - {max_nodes}")
 
     if not GROQ_API_KEY or len(GROQ_API_KEY) < 10:
-        return dummy_model("Nastav GROQ_API_KEY v .env")
+        return dummy_model("Set GROQ_API_KEY in .env")
 
-    kpi_instruction = """6. Každý uzol typu task MUSÍ obsahovať polia:
-       - duration_minutes (celé číslo, odhadovaný čas v MINÚTACH)
-         Príklady: 30 = 30 minút, 480 = 1 pracovný deň, 2400 = 1 týždeň, 10080 = 1 mesiac
-       - cost_euros (desatinné číslo, odhadované náklady v EUR)""" if include_kpi else ""
+    kpi_instruction = """6. Every node of type task MUST contain the fields:
+       - duration_minutes (integer, estimated time in MINUTES)
+         Examples: 30 = 30 minutes, 480 = 1 working day, 2400 = 1 week, 10080 = 1 month
+       - cost_euros (decimal number, estimated cost in EUR)""" if include_kpi else ""
 
-    # Model najprv vypíše všetky činnosti zo zadania ("activities") a každý krok uvedie, ktoré pokrýva
-    # ("covers"). Backend potom overí, že sa žiadna činnosť nestratila (viď _missing_activities).
+    # The model first lists every activity from the description ("activities") and each step states which
+    # of them it covers ("covers"). The backend then verifies that no activity was lost (see _coverage_problems).
     prompt = f"""
-Vytvor JSON model business procesu. Tvojou JEDINOU úlohou je vrátiť syntakticky správny a validný JSON a ABSOLÚTNE ŽIADEN INÝ TEXT.
+Create a JSON model of a business process. Your ONLY task is to return syntactically correct, valid JSON and ABSOLUTELY NO OTHER TEXT.
 
-Štruktúra, ktorú musíš striktne dodržať:
+Structure you must follow strictly:
 {{
+  "roles": [
+    {{"name": "Role", "source": "the role exactly as written in the description"}}
+  ],
   "activities": [
-    {{"n": 1, "text": "Činnosť zo zadania", "actor": "Rola"}},
-    {{"n": 2, "text": "Ďalšia činnosť", "actor": "Rola"}}
+    {{"n": 1, "text": "Activity from the description", "actor": "Role"}},
+    {{"n": 2, "text": "Next activity", "actor": "Role"}}
   ],
   "nodes": [
-    {{"id": "start", "type": "startEvent", "label": "Začiatok procesu"}},
-    {{"id": "t1", "type": "task", "label": "Názov úlohy", "actor": "Rola", "covers": [1]}},
-    {{"id": "gw1", "type": "gateway", "label": "Rozhodnutie?", "actor": "Rola"}},
-    {{"id": "t2", "type": "task", "label": "Názov úlohy", "actor": "Rola", "covers": [2]}},
-    {{"id": "end", "type": "endEvent", "label": "Koniec procesu"}}
+    {{"id": "start", "type": "startEvent", "label": "Triggering event"}},
+    {{"id": "t1", "type": "task", "label": "Task name", "actor": "Role", "covers": [1]}},
+    {{"id": "gw1", "type": "gateway", "label": "Decision?", "actor": "Role"}},
+    {{"id": "t2", "type": "task", "label": "Task name", "actor": "Role", "covers": [2]}},
+    {{"id": "end", "type": "endEvent", "label": "Expected outcome"}}
   ],
   "edges": [
     {{"id": "e1", "source": "start", "target": "t1"}},
     {{"id": "e2", "source": "t1", "target": "gw1"}},
-    {{"id": "e3", "source": "gw1", "target": "t2", "label": "Áno"}},
-    {{"id": "e4", "source": "gw1", "target": "t1", "label": "Nie"}},
+    {{"id": "e3", "source": "gw1", "target": "t2", "label": "Yes"}},
+    {{"id": "e4", "source": "gw1", "target": "t1", "label": "No"}},
     {{"id": "e5", "source": "t2", "target": "end"}}
   ]
 }}
 
-POSTUP:
-A. Do "activities" vypíš VŠETKY činnosti zo zadania v poradí, v akom idú. Každá činnosť samostatne – aj keď je ich viac v jednej vete
-   (napr. „narežie drevo, zlepí a obrúsi dosku“ = 3 činnosti). Nič nevynechaj a nevymýšľaj. Rozhodnutia („schváli alebo zamietne“, „ak…“) sú tiež činnosti.
-B. Potom vytvor uzly. KAŽDÁ činnosť z "activities" musí byť pokrytá uzlom typu "task" (pole "covers" = čísla činností "n").
-   - Ak niekto podľa zadania aktívne rozhoduje („manažér schváli alebo zamietne“), je to "task" (rozhodovanie) a za ním "gateway" s vetvami.
-   - Ak ide iba o podmienku („ak tovar nie je na sklade…“), daj "gateway" hneď za krok, ktorý podmienku zisťuje – NEPRIDÁVAJ ďalší task typu „rozhodnutie“.
-   - "label" gateway je konkrétna otázka z kontextu (napr. „Je tovar na sklade?“), nikdy len „Rozhodnutie?“.
-C. Počet uzlov typu "task" MUSÍ byť v rozsahu {min_nodes} až {max_nodes} (používateľ si ho nastavil):
-   - Ak je činností viac ako {max_nodes}, zlúč činnosti, ktoré robí TÁ ISTÁ rola bezprostredne po sebe (názov uzla musí obsahovať obe, napr. „Príprava a zverejnenie inzerátu“).
-     Ani pri zlučovaní žiadnu činnosť nevynechaj. Činnosti rôznych rolí NIKDY nezlučuj – každý uzol má práve jednu rolu (žiadne „Právnik/IT“).
-     Iba ak sa do {max_nodes} nedá zmestiť bez zlúčenia rôznych rolí, prekroč maximum o čo najmenej uzlov.
-   - Ak je činností menej ako {min_nodes}, rozdeľ činnosti na ich prirodzené podkroky, ktoré priamo vyplývajú z textu
-     (napr. „pripraví a odošle zmluvu“ → 2 kroky). NEVYMÝŠĽAJ nové činnosti, ktoré zadanie nespomína – radšej vytvor menej uzlov.
+PROCEDURE – the description usually has two parts:
+  - a SHORT OVERVIEW of the process in the user's own words: use it as context (what the process is about, what starts it, what its result is,
+    which roles take part), but do NOT turn overview sentences into extra steps;
+  - a STEP-BY-STEP DESCRIPTION (usually a numbered list): these are the activities – each numbered item is normally one activity, in that order.
+  While reading, look for: (1) the event that triggers the process, (2) the main activities and tasks, (3) the responsible roles,
+  (4) the resources and documents used, (5) the expected outcome.
+0. In "roles", list every role/actor stated in the description: "name" = the role in English, "source" = the same role copied
+   word for word from the description (in its original language and form). Every "actor" below must be one of these English names.
+A. In "activities", list ALL activities from the description in the order in which they happen. Each activity separately – even when one sentence
+   contains several (e.g. "cuts the wood, glues and sands the board" = 3 activities). Do not omit or invent anything. Decisions ("approves or rejects", "if…") are activities too.
+   Resources and documents (forms, invoices, systems, tools) are NOT activities on their own – mention them in the name of the activity
+   that uses or produces them (e.g. "Fill in the order form"). The triggering event and the expected outcome are NOT activities either.
+B. Then create the nodes. EVERY activity from "activities" must be covered by a node of type "task" (field "covers" = the activity numbers "n").
+   - If, according to the description, someone actively decides ("the manager approves or rejects"), that is a "task" (the decision-making) followed by a "gateway" with branches.
+   - If it is only a condition ("if the goods are not in stock…"), put a "gateway" right after the step that determines the condition – DO NOT ADD an extra "decision" task.
+   - The gateway "label" is a concrete question taken from the context (e.g. "Are the goods in stock?"), never just "Decision?".
+C. The number of nodes of type "task" MUST be between {min_nodes} and {max_nodes} (set by the user):
+   - If there are more activities than {max_nodes}, merge activities performed by THE SAME role directly one after another (the node name must contain both, e.g. "Prepare and publish the job ad").
+     Never drop an activity, even when merging. NEVER merge activities of different roles – each node has exactly one role (no "Lawyer/IT").
+     Only if {max_nodes} cannot be met without merging different roles, exceed the maximum by as few nodes as possible.
+   - If there are fewer activities than {min_nodes}, split activities into their natural sub-steps that follow directly from the text
+     (e.g. "prepares and sends the contract" → 2 steps). DO NOT INVENT new activities that the description does not mention – rather create fewer nodes.
 
-PRESNOSŤ (najdôležitejšie):
-- Diagram musí verne zodpovedať zadaniu: rovnaké činnosti, rovnaké poradie, rovnaké podmienky rozhodnutí. Nič nepridávaj ani neuberaj.
-- Názvy krokov formuluj zo slov zadania (to isté sloveso a predmet), stručne ako pomenovanie činnosti s veľkým začiatočným
-  písmenom (napr. „Kontrola dostupnosti tovaru“, „Odoslanie tovaru zákazníkovi“). Nemeň ich význam. Píš so slovenskou diakritikou.
-- "actor" smie byť IBA rola, ktorá je v zadaní výslovne uvedená (alebo jednoznačne vyplýva z vety, napr. podmet predchádzajúcej vety).
-  NIKDY nevymýšľaj nové roly ani oddelenia. Ak zadanie nehovorí, kto činnosť robí, nastav "actor": null.
-- Gateway má rolu toho, kto podľa zadania rozhoduje; ak to zadanie neuvádza, "actor": null.
-- Vetvy rozhodnutí podľa zadania. Ak zadanie neuvádza, čo sa stane v niektorej vetve, napoj ju na koncový uzol – nevymýšľaj ďalšie kroky.
-- Riadky začínajúce „Upresnenie:“ sú odpovede používateľa na otázky – majú prednosť pred zvyškom textu.
+ACCURACY (most important):
+- The diagram must faithfully match the description: the same activities, the same order, the same decision conditions. Add nothing, remove nothing.
+- LANGUAGE: write ALL "label", "text" and "actor" values (steps, gateway questions, branch conditions, roles) in ENGLISH,
+  even when the description is written in another language (e.g. Slovak) – translate them faithfully. Only "roles[].source" keeps the original wording.
+- Phrase step names from the description (the same verb and object, translated to English if needed), briefly, as an activity name starting with a capital
+  letter (e.g. "Check product availability", "Ship goods to the customer"). Do not change their meaning.
+- "actor" may ONLY be a role that is explicitly stated in the description (or unambiguously follows from the sentence, e.g. the subject of the previous sentence).
+  NEVER invent new roles or departments. If the description does not say who performs an activity, set "actor": null.
+- A gateway has the role of whoever decides according to the description; if the description does not say, "actor": null.
+- Decision branches follow the description. If the description does not say what happens in a branch, determine its target logically from the process context
+  among the existing steps – do NOT connect it to the end node automatically:
+  - a failed check or a rejection that can be fixed (e.g. "Is the document complete?" → No) → go back to the step that prepares or corrects it (a loop),
+  - a condition under which part of the process is simply skipped (e.g. "Is approval needed?" → No) → continue to the first step after the skipped part,
+  - to the end node only if this branch logically ends the process (e.g. final rejection, order cancellation).
+  Do not invent new steps here either – connect the branch only to steps that already exist in the diagram.
+- START and END: the startEvent "label" is the triggering event from the description, briefly (e.g. "Invoice received"); the endEvent "label"
+  is the expected outcome (e.g. "Invoice paid"). If the description does not state them, use "Process start" / "Process end".
+  If a branch ends the process with a different result (e.g. rejection), it still goes to the same end node; the edge label states the result.
+- Lines starting with "Clarification:" are the user's answers to questions – they take precedence over the rest of the text.
 
-PRAVIDLÁ:
-1. MUSÍ to byť len JSON objekt.
-2. Každý uzol typu "gateway" MUSÍ mať aspoň 2 odchádzajúce hrany.
-3. KAŽDÁ hrana vychádzajúca z uzla typu "gateway" MUSÍ mať vyplnené pole "label" s konkrétnou podmienkou zodpovedajúcou kontextu procesu (napr. "Áno"/"Nie", "Schválené"/"Zamietnuté"). Nikdy nepoužívaj generické "Možnosť 1" / "Možnosť 2".
-4. Hrany medzi bežnými "task" uzlami label nepotrebujú. Zachovaj poradie činností zo zadania.
-5. Posledný element v zoznamoch (nodes, edges) NESMIE mať za sebou čiarku!
+RULES:
+1. It MUST be a JSON object only.
+2. Every node of type "gateway" MUST have at least 2 outgoing edges.
+3. EVERY edge leaving a "gateway" node MUST have a "label" with a concrete condition that fits the process context (e.g. "Yes"/"No", "Approved"/"Rejected"). Never use generic "Option 1" / "Option 2".
+4. Edges between ordinary "task" nodes do not need a label. Keep the order of activities from the description.
+5. The last element of a list (nodes, edges) MUST NOT be followed by a comma!
 {kpi_instruction}
 
-Zadanie procesu:
+Process description:
 {description}
 """
 
@@ -498,7 +556,7 @@ Zadanie procesu:
 
         choices = data.get("choices", [])
         if not choices:
-            raise ValueError("Groq nevrátil žiadne choices")
+            raise ValueError("Groq returned no choices")
 
         first = choices[0]
         if isinstance(first, dict):
@@ -511,7 +569,7 @@ Zadanie procesu:
 
         if content.startswith("```"):
             lines = content.split('\n')
-            if lines.startswith("```"):  # OPRAVENÉ Z lines.startswith
+            if lines and lines[0].startswith("```"):
                 lines = lines[1:]
             if lines and lines[-1].startswith("```"):
                 lines = lines[:-1]
@@ -532,10 +590,10 @@ Zadanie procesu:
             if len(diagram) > 0 and isinstance(diagram[0], dict):
                 diagram = diagram[0]
             else:
-                raise ValueError("AI vrátilo list namiesto JSON objektu")
+                raise ValueError("AI returned a list instead of a JSON object")
 
         if not isinstance(diagram, dict):
-            raise ValueError(f"Neočakávaný typ odpovede: {type(diagram)}")
+            raise ValueError(f"Unexpected response type: {type(diagram)}")
 
         nodes = []
         node_ids = set()
@@ -549,7 +607,7 @@ Zadanie procesu:
             nodes.append(Node(
                 id=node_id,
                 type=str(n.get("type", "task")),
-                label=str(n.get("label", "Neznáma úloha")),
+                label=str(n.get("label", "Unknown task")),
                 actor=n.get("actor"),
                 duration_minutes=n.get("durationminutes") or n.get("duration_minutes"),
                 cost_euros=n.get("costeuros") or n.get("cost_euros"),
@@ -576,38 +634,54 @@ Zadanie procesu:
         model = ProcessModel(nodes=nodes, edges=edges)
         missing, multi_role = _coverage_problems(diagram, raw_nodes)
         if missing or multi_role:
-            # Jeden pokus o doplnenie cez editor diagramu; ak zlyhá, vrátime pôvodný model
-            print(f"🔁 Doplnenie diagramu: chýba {len(missing)} činností, {len(multi_role)} uzlov s viacerými rolami")
+            # One repair attempt through the diagram editor; if it fails, the original model is returned
+            print(f"🔁 Repairing diagram: {len(missing)} activities missing, {len(multi_role)} nodes with several roles")
             instruction = _repair_instruction(diagram, missing, multi_role, include_kpi)
             current = model.model_dump() if hasattr(model, "model_dump") else model.dict()
             repaired = edit_diagram_with_ai(instruction, current)
-            if not any(n.label == "Chyba AI" for n in repaired.nodes) and len(repaired.nodes) >= len(model.nodes):
+            if not any(n.label == AI_ERROR_LABEL for n in repaired.nodes) and len(repaired.nodes) >= len(model.nodes):
                 model = repaired
-        return _ground_actors(model, description)
+        return _ground_actors(model, description, _role_sources(diagram))
 
     except Exception as exc:
-        print(f"💥 CHYBA: {exc}")
-        return dummy_model(f"Chyba: {str(exc)[:40]}")
+        print(f"💥 ERROR: {exc}")
+        return dummy_model(f"Error: {str(exc)[:40]}")
 
 
 def _actor_in_text(actor: str, text_ascii: str) -> bool:
-    """Rola je v zadaní, ak sa v texte nájde začiatok (5 znakov) každého jej slova – zvládne aj skloňovanie."""
+    """A role is in the description if the start (5 characters) of each of its words occurs in the text – this tolerates inflection."""
     words = [w for w in re.findall(r"[a-z0-9]+", _ascii(actor)) if len(w) >= 2]
     return bool(words) and all(re.search(r"\b" + re.escape(w[:5]), text_ascii) for w in words)
 
 
-def _ground_actors(model: ProcessModel, description: str) -> ProcessModel:
-    """AI nesmie vymýšľať roly: rolu, ktorá v zadaní nie je, odstránime (krok pôjde do dráhy „Bez roly“)."""
+def _role_sources(diagram: dict) -> Dict[str, str]:
+    """English role name → the role's original wording in the description (from the "roles" list)."""
+    sources = {}
+    for role in diagram.get("roles") or []:
+        if isinstance(role, dict) and str(role.get("name") or "").strip() and str(role.get("source") or "").strip():
+            sources[_ascii(role["name"])] = str(role["source"])
+    return sources
+
+
+def _ground_actors(model: ProcessModel, description: str, role_sources: Optional[Dict[str, str]] = None) -> ProcessModel:
+    """The AI must not invent roles: a role missing from the description is removed (the step goes to the "No role" lane).
+    Roles are written in English, so a translated role is checked through its original wording from the description."""
     text_ascii = _ascii(description)
-    invented = sorted({n.actor for n in model.nodes if n.actor and not _actor_in_text(n.actor, text_ascii)})
+    role_sources = role_sources or {}
+
+    def grounded(actor: str) -> bool:
+        source = role_sources.get(_ascii(actor))
+        return _actor_in_text(actor, text_ascii) or bool(source and _actor_in_text(source, text_ascii))
+
+    invented = sorted({n.actor for n in model.nodes if n.actor and not grounded(n.actor)})
     if invented:
-        print(f"🧹 Odstránené vymyslené roly: {', '.join(invented)}")
+        print(f"🧹 Removed invented roles: {', '.join(invented)}")
     nodes = [n.copy(update={"actor": None}) if n.actor in invented else n for n in model.nodes]
     return ProcessModel(nodes=nodes, edges=model.edges)
 
 
 def _coverage_problems(diagram: dict, raw_nodes: list):
-    """Činnosti zo zadania, ktoré žiadny krok nepokrýva, a kroky zlúčené pre viac rolí naraz."""
+    """Activities from the description that no step covers, and steps merged across several roles."""
     activities = [a for a in (diagram.get("activities") or []) if isinstance(a, dict) and str(a.get("text", "")).strip()]
     tasks = [n for n in raw_nodes if isinstance(n, dict) and n.get("type", "task") == "task"]
     covered = set()
@@ -621,7 +695,7 @@ def _coverage_problems(diagram: dict, raw_nodes: list):
             except (TypeError, ValueError):
                 pass
     missing = []
-    # Bez spoľahlivého "covers" (aspoň polovica krokov) nevieme pokrytie posúdiť – radšej nič nedopĺňame
+    # Without reliable "covers" (at least half of the steps) coverage cannot be judged – better not to add anything
     if activities and tasks and reporting * 2 >= len(tasks):
         for index, activity in enumerate(activities, start=1):
             try:
@@ -636,28 +710,31 @@ def _coverage_problems(diagram: dict, raw_nodes: list):
 
 def _repair_instruction(diagram: dict, missing: list, multi_role: list, include_kpi: bool) -> str:
     activities = [a for a in (diagram.get("activities") or []) if isinstance(a, dict)]
-    order = "\n".join(f'{a.get("n", i)}. {a.get("text")} (rola: {a.get("actor") or "neuvedená"})'
+    order = "\n".join(f'{a.get("n", i)}. {a.get("text")} (role: {a.get("actor") or "not stated"})'
                       for i, a in enumerate(activities, start=1))
     parts = []
     if missing:
-        listed = "\n".join(f'- „{a.get("text")}“ (rola: {a.get("actor") or "neuvedená"})' for a in missing)
-        parts.append("Diagram nepokrýva tieto činnosti zo zadania. Doplň KAŽDÚ ako samostatný krok (task) so zadanou rolou "
-                     "a zaraď ju na správne miesto v toku podľa poradia v zadaní (prepoj s predchádzajúcim aj nasledujúcim krokom):\n"
+        listed = "\n".join(f'- "{a.get("text")}" (role: {a.get("actor") or "not stated"})' for a in missing)
+        parts.append("The diagram does not cover these activities from the description. Add EACH of them as a separate step (task) with the given role "
+                     "and place it at the correct position in the flow according to the order in the description (connect it to both the previous and the next step):\n"
                      + listed)
     if multi_role:
-        listed = "\n".join(f'- „{n.get("label")}“ (role: {n.get("actor")})' for n in multi_role)
-        parts.append("Tieto kroky majú viac rolí naraz. Rozdeľ každý na samostatné po sebe idúce kroky, jeden pre každú rolu, "
-                     "a zachovaj ich napojenie v toku:\n" + listed)
+        listed = "\n".join(f'- "{n.get("label")}" (roles: {n.get("actor")})' for n in multi_role)
+        parts.append("These steps have several roles at once. Split each of them into separate consecutive steps, one per role, "
+                     "and keep their connections in the flow:\n" + listed)
     if include_kpi:
-        parts.append("Pri všetkých nových krokoch odhadni duration_minutes aj cost_euros.")
-    parts.append("Ostatné kroky, rozhodnutia a prepojenia zachovaj. Poradie činností v zadaní je:\n" + order)
+        parts.append("Estimate both duration_minutes and cost_euros for every new step.")
+    parts.append("Keep all other steps, decisions and connections. The order of activities in the description is:\n" + order)
     return "\n\n".join(parts)
+
+
+AI_ERROR_LABEL = "AI error"
 
 
 def dummy_model(msg: str) -> ProcessModel:
     return ProcessModel(
         nodes=[
-            Node(id="start", type="startEvent", label="Chyba AI", actor=None),
+            Node(id="start", type="startEvent", label=AI_ERROR_LABEL, actor=None),
             Node(id="end", type="endEvent", label=msg, actor=None),
         ],
         edges=[Edge(id="e1", source="start", target="end")],
@@ -670,7 +747,7 @@ def startup_event():
     init_db()
 
 
-# ─── ENDPOINTY ────────────────────────────────────────────────
+# ─── ENDPOINTS ────────────────────────────────────────────────
 @app.get("/categories")
 def get_categories():
     return {"categories": PREDEFINED_CATEGORIES}
@@ -678,7 +755,7 @@ def get_categories():
 
 @app.get("/")
 def read_root():
-    return {"message": "API beží"}
+    return {"message": "API is running"}
 
 
 @app.post("/register")
@@ -690,14 +767,14 @@ def register_user(user: UserRegister):
             (user.username,)
         )
         if cursor.fetchone():
-            raise HTTPException(status_code=400, detail="Používateľské meno už existuje")
+            raise HTTPException(status_code=400, detail="Username already exists")
         hashed_pw = get_password_hash(user.password)
         cursor.execute(
             f"INSERT INTO users (username, hashed_password, created_at) VALUES ({PARAM_MARKER}, {PARAM_MARKER}, {PARAM_MARKER})",
             (user.username, hashed_pw, datetime.now(timezone.utc).isoformat())
         )
-        # ← NEvolaj conn.commit() tu, get_db() ho volá automaticky
-    return {"success": True, "message": "Účet vytvorený. Môžeš sa prihlásiť."}
+        # ← do NOT call conn.commit() here, get_db() does it automatically
+    return {"success": True, "message": "Account created. You can now sign in."}
 
 
 @app.post("/login", response_model=TokenResponse)
@@ -710,7 +787,7 @@ def login_user(user: UserLogin):
         )
         row = cursor.fetchone()
         if not row or not verify_password(user.password, row["hashed_password"]):
-            raise HTTPException(status_code=401, detail="Nesprávne meno alebo heslo")
+            raise HTTPException(status_code=401, detail="Incorrect username or password")
         access_token = create_access_token(data={"sub": str(row["id"]), "username": row["username"]})
     return {"access_token": access_token, "token_type": "bearer", "username": row["username"]}
 
@@ -721,10 +798,10 @@ def generate_model(input: TextInput) -> ProcessModel:
 
 def groq_json(system_prompt: str, user_prompt: str, max_tokens: int = 2000, temperature: float = 0.0,
               reasoning_effort: str = "medium") -> dict:
-    """Zavolá Groq s JSON výstupom a vráti rozparsovaný objekt (chyby mapuje na HTTPException).
-    Pri krátkom limite Groq (429 s čakaním do 12 s) počká a skúsi to ešte raz."""
+    """Calls Groq with JSON output and returns the parsed object (errors are mapped to HTTPException).
+    On a short Groq rate limit (429 with a wait of up to 12 s) it waits and retries once."""
     if not GROQ_API_KEY or len(GROQ_API_KEY) < 10:
-        raise HTTPException(status_code=503, detail="Nastav GROQ_API_KEY v .env.")
+        raise HTTPException(status_code=503, detail="Set GROQ_API_KEY in .env.")
     payload = {
         "model": GROQ_MODEL,
         "messages": [
@@ -748,27 +825,27 @@ def groq_json(system_prompt: str, user_prompt: str, max_tokens: int = 2000, temp
         response.raise_for_status()
         choices = response.json().get("choices", [])
         if not choices:
-            raise ValueError("Groq nevrátil žiadnu odpoveď")
+            raise ValueError("Groq returned no response")
         result = json.loads(choices[0].get("message", {}).get("content", ""))
         if not isinstance(result, dict):
-            raise ValueError("Groq nevrátil JSON objekt")
+            raise ValueError("Groq did not return a JSON object")
         return result
     except requests.exceptions.RequestException as exc:
         if exc.response is not None and exc.response.status_code == 429:
             wait = re.search(r"try again in ([\d.]+)s", exc.response.text)
-            hint = f" Skús to znova o {round(float(wait.group(1))) + 1} s." if wait else " Skús to znova o chvíľu."
-            raise HTTPException(status_code=429, detail="AI je práve vyťažená (limit Groq API)." + hint) from exc
+            hint = f" Try again in {round(float(wait.group(1))) + 1} s." if wait else " Try again in a moment."
+            raise HTTPException(status_code=429, detail="The AI is busy right now (Groq API rate limit)." + hint) from exc
         detail = exc.response.text[:400] if exc.response is not None else str(exc)[:160]
-        raise HTTPException(status_code=503, detail=f"Groq API nie je dostupné: {detail}") from exc
+        raise HTTPException(status_code=503, detail=f"Groq API is unavailable: {detail}") from exc
     except (ValueError, TypeError, AttributeError) as exc:
-        raise HTTPException(status_code=502, detail=f"Groq vrátil neplatnú odpoveď: {str(exc)[:200]}") from exc
+        raise HTTPException(status_code=502, detail=f"Groq returned an invalid response: {str(exc)[:200]}") from exc
 
 
 EVENT_NODE_TYPES = {"startEvent", "endEvent"}
 
 
 def describe_process_model(model: dict) -> str:
-    """Deterministický textový opis diagramu: kroky v poradí toku, roly a vetvy s podmienkami."""
+    """Deterministic text description of the diagram: steps in flow order, roles and branches with conditions."""
     nodes = [n for n in (model.get("nodes") or []) if isinstance(n, dict) and n.get("id") is not None]
     edges = [e for e in (model.get("edges") or []) if isinstance(e, dict)]
     by_id = {str(n["id"]): n for n in nodes}
@@ -800,10 +877,10 @@ def describe_process_model(model: dict) -> str:
     def name(nid: str) -> str:
         node_type = by_id[nid].get("type")
         if node_type == "startEvent":
-            return "ZAČIATOK"
+            return "START"
         if node_type == "endEvent":
-            return "KONIEC"
-        return f'krok {numbers[nid]} „{by_id[nid].get("label", "")}“'
+            return "END"
+        return f'step {numbers[nid]} "{by_id[nid].get("label", "")}"'
 
     lines = []
     for nid in order:
@@ -812,58 +889,58 @@ def describe_process_model(model: dict) -> str:
         if node_type == "endEvent":
             continue
         if node_type == "startEvent":
-            head = "ZAČIATOK"
+            head = "START"
         else:
-            kind = "Rozhodnutie" if node_type == "gateway" or len(outgoing[nid]) > 1 else "Krok"
-            head = f'{kind} {numbers[nid]}: „{node.get("label", "")}“ (rola: {node.get("actor") or "neuvedená"})'
-        targets = [name(target) + (f" [podmienka: {label}]" if label else "") for target, label in outgoing[nid]]
-        lines.append(f"{head} → " + ("; ".join(targets) if targets else "(nepokračuje)"))
-    return "\n".join(lines) or "(prázdny diagram)"
+            kind = "Decision" if node_type == "gateway" or len(outgoing[nid]) > 1 else "Step"
+            head = f'{kind} {numbers[nid]}: "{node.get("label", "")}" (role: {node.get("actor") or "not stated"})'
+        targets = [name(target) + (f" [condition: {label}]" if label else "") for target, label in outgoing[nid]]
+        lines.append(f"{head} → " + ("; ".join(targets) if targets else "(does not continue)"))
+    return "\n".join(lines) or "(empty diagram)"
 
 
 def _ascii(text: str) -> str:
     return unicodedata.normalize("NFKD", str(text or "")).encode("ascii", "ignore").decode().strip().lower()
 
 
-ACCURACY_STATUS_SCORE = {"splnene": 1.0, "ciastocne": 0.5, "chyba": 0.0}
-ACCURACY_CATEGORIES = {"krok", "akter", "rozhodnutie", "poradie", "vysledok"}
+ACCURACY_STATUS_SCORE = {"met": 1.0, "partial": 0.5, "missing": 0.0}
+ACCURACY_CATEGORIES = {"step", "actor", "decision", "order", "outcome"}
 
 
 @app.post("/evaluate-model", response_model=DiagramAccuracyResponse)
 def evaluate_generated_model(input: DiagramAccuracyRequest) -> DiagramAccuracyResponse:
-    """Rozloží zadanie na požiadavky, AI posúdi každú zvlášť a skóre sa dopočíta deterministicky."""
+    """Splits the description into requirements, the AI judges each one separately and the score is computed deterministically."""
     diagram_text = describe_process_model(input.model)
-    evaluation_prompt = f"""Porovnávaš PÔVODNÉ ZADANIE používateľa s OBSAHOM PROCESNÉHO DIAGRAMU.
+    evaluation_prompt = f"""You compare the user's ORIGINAL DESCRIPTION with the CONTENT OF A PROCESS DIAGRAM.
 
-Postup:
-1. Rozlož pôvodné zadanie na 4 až 20 atomických požiadaviek. Každá je jedna overiteľná vec, ktorú zadanie VÝSLOVNE uvádza. Kategórie:
-   - "krok": činnosť, ktorá sa má v procese vykonať,
-   - "akter": kto konkrétnu činnosť vykonáva (len ak to zadanie uvádza),
-   - "rozhodnutie": rozhodovanie/vetvenie a jeho vetvy alebo podmienky,
-   - "poradie": dôležitá postupnosť (X nasleduje po Y),
-   - "vysledok": ako proces končí.
-   Nevymýšľaj požiadavky. Nezaraďuj samozrejmosti (začiatok a koniec procesu, čas, náklady, KPI, grafické rozloženie).
-2. importance: 3 = jadro procesu, 2 = dôležitý detail, 1 = drobnosť.
-3. Pre každú požiadavku urči status podľa diagramu:
-   - "splnene": diagram ju obsahuje (iná formulácia či synonymá sú v poriadku; jeden krok môže pokryť viac požiadaviek a naopak),
-   - "ciastocne": len čiastočne (krok je, ale vykonáva ho iná rola; vetva existuje, ale bez podmienky; poradie je mierne iné),
-   - "chyba": v diagrame nie je.
-   Ak rozhodnutie nemá rolu, ale bezprostredne predchádzajúci krok vykonáva požadovaná rola, ber rolu ako splnenú.
-   evidence: krátko uveď krok diagramu, ktorý to dokladá, alebo prečo to chýba.
-4. extra: najviac 5 krokov diagramu, ktoré zadanie nežiada a nie sú ani rozumným rozpísaním požadovaného kroku. Skóre neznižujú.
-5. summary: 1–2 vety – čo diagram vystihol a čo podstatné chýba.
+Procedure:
+1. Split the original description into 4 to 20 atomic requirements. Each one is a single verifiable thing that the description states EXPLICITLY. Categories:
+   - "step": an activity that has to be performed in the process,
+   - "actor": who performs a specific activity (only if the description says so),
+   - "decision": a decision/branching and its branches or conditions,
+   - "order": an important sequence (X follows Y),
+   - "outcome": how the process ends.
+   Do not invent requirements. Do not include obvious things (process start and end, time, costs, KPIs, visual layout).
+2. importance: 3 = core of the process, 2 = important detail, 1 = minor detail.
+3. For each requirement determine its status according to the diagram:
+   - "met": the diagram contains it (different wording or synonyms are fine; one step may cover several requirements and vice versa),
+   - "partial": only partially (the step exists but a different role performs it; the branch exists but without a condition; the order is slightly different),
+   - "missing": it is not in the diagram.
+   If a decision has no role but the directly preceding step is performed by the required role, treat the role as met.
+   evidence: briefly name the diagram step that proves it, or why it is missing.
+4. extra: at most 5 diagram steps that the description does not ask for and that are not a reasonable breakdown of a required step. They do not lower the score.
+5. summary: 1–2 sentences – what the diagram captured and what important part is missing.
 
-Odpovedaj po slovensky a vráť iba JSON:
+Respond in English and return only JSON:
 {{
-  "requirements": [{{"text": "...", "category": "krok", "importance": 3, "status": "splnene", "evidence": "..."}}],
+  "requirements": [{{"text": "...", "category": "step", "importance": 3, "status": "met", "evidence": "..."}}],
   "extra": ["..."],
   "summary": "..."
 }}
 
-PÔVODNÉ ZADANIE:
+ORIGINAL DESCRIPTION:
 {input.description}
 
-DIAGRAM (kroky v poradí toku):
+DIAGRAM (steps in flow order):
 {diagram_text}
 """
     result = groq_json("You evaluate process diagrams against requirements and return only valid JSON.",
@@ -874,7 +951,7 @@ DIAGRAM (kroky v poradí toku):
         if not isinstance(raw, dict) or not str(raw.get("text", "")).strip():
             continue
         status_value = _ascii(raw.get("status"))
-        status_value = status_value if status_value in ACCURACY_STATUS_SCORE else "chyba"
+        status_value = status_value if status_value in ACCURACY_STATUS_SCORE else "missing"
         category = _ascii(raw.get("category"))
         try:
             importance = min(3, max(1, int(raw.get("importance", 2))))
@@ -882,13 +959,13 @@ DIAGRAM (kroky v poradí toku):
             importance = 2
         requirements.append(AccuracyRequirement(
             text=str(raw["text"]).strip(),
-            category=category if category in ACCURACY_CATEGORIES else "krok",
+            category=category if category in ACCURACY_CATEGORIES else "step",
             importance=importance,
             status=status_value,
             evidence=str(raw.get("evidence") or "").strip(),
         ))
     if not requirements:
-        raise HTTPException(status_code=502, detail="AI nevrátila žiadne požiadavky na porovnanie.")
+        raise HTTPException(status_code=502, detail="The AI returned no requirements to compare.")
 
     def weighted_score(items: List[AccuracyRequirement]) -> int:
         total = sum(r.importance for r in items)
@@ -902,43 +979,43 @@ DIAGRAM (kroky v poradí toku):
         accuracy_percent=weighted_score(requirements),
         diagram_prompt=diagram_text,
         summary=str(result.get("summary") or "").strip(),
-        matches=[r.text for r in requirements if r.status == "splnene"],
-        missing=[r.text + (" (čiastočne)" if r.status == "ciastocne" else "") for r in requirements if r.status != "splnene"],
+        matches=[r.text for r in requirements if r.status == "met"],
+        missing=[r.text + (" (partially)" if r.status == "partial" else "") for r in requirements if r.status != "met"],
         extra=[str(x).strip() for x in (result.get("extra") or []) if str(x).strip()][:5],
         requirements=requirements,
         category_scores=category_scores,
     )
 
 
-TOOL_KINDS = ["stroj", "zariadenie", "nástroj", "softvér", "materiál"]
+TOOL_KINDS = ["machine", "device", "tool", "software", "material"]
 
 
 @app.post("/process-resources", response_model=ProcessResourcesResponse)
 def process_resources(input: ProcessResourcesRequest) -> ProcessResourcesResponse:
-    """Odhad potrebných špecialistov a strojov/nástrojov pre kroky procesu."""
+    """Estimate of the specialists and machines/tools the process steps need."""
     diagram_text = describe_process_model(input.model)
     roles = sorted({str(n.get("actor")).strip() for n in (input.model.get("nodes") or [])
                     if isinstance(n, dict) and n.get("actor") and n.get("type") not in EVENT_NODE_TYPES})
-    resources_prompt = f"""Analyzuj business proces a urči zdroje, ktoré potrebuje.
+    resources_prompt = f"""Analyse the business process and determine the resources it needs.
 
-1. specialists: pre KAŽDÚ rolu z diagramu ({", ".join(roles) or "roly nie sú uvedené – odvoď ich z krokov"}) uveď:
-   - "role": názov roly PRESNE ako v diagrame,
-   - "qualification": potrebná kvalifikácia, odbornosť alebo zručnosti (1 veta),
-   - "responsibilities": 1–3 hlavné zodpovednosti v tomto procese,
-   - "steps": názvy krokov diagramu, ktoré rola vykonáva.
-2. tools: stroje, zariadenia, nástroje, softvér a materiál, ktoré sa pri krokoch používajú alebo sú na ne realisticky potrebné (najviac 12). Pre každý:
-   - "name" (po slovensky, napr. „Účtovný softvér“, nie anglicky), "kind" (jedno z: {", ".join(TOOL_KINDS)}), "purpose" (na čo slúži, 1 veta), "steps" (kroky diagramu).
-   Počítač ako všeobecné vybavenie uveď najviac raz.
-   Ak nástroj nie je v zadaní výslovne, odhadni bežné vybavenie pre danú činnosť, ale nevymýšľaj nesúvisiace veci.
-3. summary: 1–2 vety o tom, aké ľudské a technické zdroje proces najviac zaťažuje.
+1. specialists: for EACH role in the diagram ({", ".join(roles) or "roles are not stated – derive them from the steps"}) provide:
+   - "role": the role name EXACTLY as in the diagram,
+   - "qualification": the required qualification, expertise or skills (1 sentence),
+   - "responsibilities": 1–3 main responsibilities in this process,
+   - "steps": names of the diagram steps that the role performs.
+2. tools: machines, devices, tools, software and material that are used in the steps or are realistically needed for them (at most 12). For each:
+   - "name" (e.g. "Accounting software"), "kind" (one of: {", ".join(TOOL_KINDS)}), "purpose" (what it is for, 1 sentence), "steps" (diagram steps).
+   List a computer as general equipment at most once.
+   If a tool is not explicitly in the description, estimate the usual equipment for the activity, but do not invent unrelated things.
+3. summary: 1–2 sentences about which human and technical resources the process relies on most.
 
-Odpovedaj po slovensky a vráť iba JSON:
-{{"summary": "...", "specialists": [{{"role": "...", "qualification": "...", "responsibilities": ["..."], "steps": ["..."]}}], "tools": [{{"name": "...", "kind": "softvér", "purpose": "...", "steps": ["..."]}}]}}
+Respond in English and return only JSON:
+{{"summary": "...", "specialists": [{{"role": "...", "qualification": "...", "responsibilities": ["..."], "steps": ["..."]}}], "tools": [{{"name": "...", "kind": "software", "purpose": "...", "steps": ["..."]}}]}}
 
-ZADANIE PROCESU:
-{input.description or "(neuvedené)"}
+PROCESS DESCRIPTION:
+{input.description or "(not provided)"}
 
-DIAGRAM (kroky v poradí toku):
+DIAGRAM (steps in flow order):
 {diagram_text}
 """
     result = groq_json("You analyse business processes and return only valid JSON.", resources_prompt,
@@ -956,121 +1033,183 @@ DIAGRAM (kroky v poradí toku):
     for t in result.get("tools") or []:
         if not isinstance(t, dict) or not str(t.get("name") or "").strip():
             continue
-        kind = next((k for k in TOOL_KINDS if _ascii(k) == _ascii(t.get("kind"))), "nástroj")
+        kind = next((k for k in TOOL_KINDS if _ascii(k) == _ascii(t.get("kind"))), "tool")
         tools.append(ToolInfo(name=str(t["name"]).strip(), kind=kind, purpose=str(t.get("purpose") or "").strip(),
                               steps=str_list(t.get("steps"))))
     return ProcessResourcesResponse(summary=str(result.get("summary") or "").strip(),
                                     specialists=specialists, tools=tools[:12])
 
 
+REVIEW_ASPECTS = {  # target -> (review flag, label, suggestion when missing)
+    "trigger": ("trigger_defined", "Triggering event", "Add what triggers the process, e.g. \"The process starts when …\"."),
+    "roles": ("roles_specified", "Responsible roles", "Say who performs each step."),
+    "outcome": ("outcome_defined", "Expected outcome", "Add the expected outcome, e.g. \"The process ends when …\"."),
+    "resources": ("resources_identified", "Resources and documents", "Name the documents, forms or systems used in the steps."),
+}
+QUESTION_ASPECTS = ("trigger", "outcome", "roles")  # aspects worth a question; resources only get a tip
+
+
+def _structured_questions(raw_questions, review: dict) -> List[ReviewQuestion]:
+    """Keep only questions that clarify an unclear step or a missing aspect of the description structure."""
+    unclear_steps = {_ascii(s.number): s for s in review.get("step_checks", []) if not s.clear}
+    step_order = {key: i for i, key in enumerate(unclear_steps)}
+    accepted = {}
+    for q in raw_questions or []:
+        if not isinstance(q, dict) or not str(q.get("question") or "").strip():
+            continue
+        target = _ascii(q.get("target")).replace(" ", "")
+        if target.startswith("step:") and target[5:] in unclear_steps:
+            step = unclear_steps[target[5:]]
+            label = f"Step {step.number} – {step.text}"
+            priority = step_order[target[5:]]
+        elif target in QUESTION_ASPECTS and not review.get(REVIEW_ASPECTS[target][0]):
+            label = REVIEW_ASPECTS[target][1]
+            priority = 100 + QUESTION_ASPECTS.index(target)
+        else:
+            continue  # off-structure question
+        options = [ReviewOption(label=str(o["label"]).strip(), clarification=str(o.get("clarification") or o["label"]).strip())
+                   for o in (q.get("options") or []) if isinstance(o, dict) and str(o.get("label") or "").strip()]
+        if len(options) < 2 or target in accepted:
+            continue
+        accepted[target] = (priority, ReviewQuestion(question=str(q["question"]).strip(), options=options[:3],
+                                                     target=target, target_label=label))
+    if any(key.startswith("step:") for key in accepted):
+        accepted.pop("roles", None)  # the step questions already ask who performs the unclear steps
+    return [question for _, question in sorted(accepted.values(), key=lambda item: item[0])][:3]
+
+
+def _structural_suggestions(review: dict) -> List[str]:
+    """Tips derived only from the structure: missing parts first, then what the questions do not already cover."""
+    tips = []
+    if not review.get("overview_present"):
+        tips.append("Start with a short overview in your own words (1–3 sentences): what the process is about, what starts it and what its result is.")
+    if not review.get("steps_listed"):
+        tips.append("Describe the process step by step as a numbered list (1., 2., 3. …), one activity per step.")
+    asked = {q.target for q in review.get("questions", [])}
+    for step in review.get("step_checks", []):
+        if not step.clear and f"step:{_ascii(step.number)}" not in asked and step.issue:
+            tips.append(f"Step {step.number}: {step.issue}")
+    for target, (flag, _, tip) in REVIEW_ASPECTS.items():
+        if target == "roles" and any(key.startswith("step:") for key in asked):
+            continue  # the step questions already ask who performs the unclear steps
+        if not review.get(flag) and target not in asked:
+            tips.append(tip)
+    return tips[:3]
+
+
 @app.post("/review-prompt", response_model=PromptReviewResponse)
 def review_prompt(input: PromptReviewRequest) -> PromptReviewResponse:
     prompt = input.prompt.strip()
     if len(prompt) < 30:
-        raise HTTPException(status_code=400, detail="Napíšte aspoň 30 znakov procesu, aby ho AI vedela skontrolovať.")
+        raise HTTPException(status_code=400, detail="Write at least 30 characters of the process so the AI can review it.")
 
-    # TODO: Add the remaining prompt quality checks when their requirements are defined.
-    review_instructions = """Skontroluj zadanie business procesu a vráť iba jeden JSON objekt s poľami:
+    review_instructions = """Review the business process description and return only one JSON object with the fields:
 {
-  "overall_review": "krátke celkové zhodnotenie po slovensky",
-  "structure_ok": true,
+  "overall_review": "short overall assessment in English",
   "overview_present": true,
-  "steps_ordered": true,
-  "actors_listed": true,
-  "structure_feedback": "či je jasný prehľad procesu a zrozumiteľné poradie krokov",
+  "steps_listed": true,
+  "step_checks": [
+    {"number": "1", "text": "short name of the step", "clear": true, "issue": ""},
+    {"number": "2", "text": "short name of the step", "clear": false, "issue": "It is not stated who checks the invoice."}
+  ],
+  "trigger_defined": true,
+  "activities_identified": true,
+  "roles_specified": true,
+  "resources_identified": false,
+  "outcome_defined": false,
   "actor_assignments_clear": false,
-  "unclear_tasks": ["konkrétny krok, pri ktorom nie je jasný vykonávateľ"],
-  "suggestions": ["konkrétne odporúčanie na doplnenie zadania"],
+  "unclear_tasks": ["a concrete step whose performer is unclear"],
   "activity_count": 0,
   "questions": [
-    {"question": "Kto schvaľuje faktúru?", "options": [
-      {"label": "Manažér", "clarification": "Faktúru schvaľuje manažér."},
-      {"label": "Účtovník", "clarification": "Faktúru schvaľuje účtovník."}
+    {"target": "step:2", "question": "Who checks the invoice in step 2?", "options": [
+      {"label": "Manager", "clarification": "In step 2 the manager checks the invoice."},
+      {"label": "Accountant", "clarification": "In step 2 the accountant checks the invoice."}
     ]}
   ]
 }
 
-Pravidlá kontroly:
-1. Posúď, či zadanie obsahuje všeobecný prehľad problému alebo procesu.
-2. Posúď, či sú činnosti očíslované alebo inak jasne zoradené.
-3. Posúď, či sú uvedení aktéri (napríklad v časti Aktéri).
-4. Pri každej činnosti over, či je z textu jednoznačné, kto ju vykonáva. Zoznam unclear_tasks musí obsahovať len konkrétne nejasné činnosti citované alebo stručne pomenované zo zadania. Nevymýšľaj aktérov.
-5. Ak je zadanie krátke alebo sa ešte píše, formuluj kontrolu ako priebežnú a navrhni najdôležitejšie doplnenia. Buď vecný, stručný a povzbudivý.
-6. Odpovedaj po slovensky, zachovaj mená osôb a nehodnoť gramatiku.
-7. activity_count: počet samostatných činností v zadaní (aj viac činností v jednej vete počítaj zvlášť; rozhodnutie je tiež činnosť).
-8. questions: najviac 3 otázky, ktoré by diagram najviac spresnili – iba ak je v zadaní skutočná nejasnosť
-   (kto vykonáva činnosť, čo sa stane v nepopísanej vetve rozhodnutia, nejasné poradie). Ak je zadanie jasné, vráť prázdny zoznam.
-   Ku každej otázke daj 2–3 možnosti; "clarification" je celá veta, ktorá sa doplní do zadania. Možnosti ber prednostne z rolí a činností,
-   ktoré zadanie už obsahuje. Nepýtaj sa na čas, náklady ani na veci, ktoré už riadok „Upresnenie:“ zodpovedal."""
+The description is expected to have this structure:
+  A. A SHORT OVERVIEW of the business process in the user's own words (1–3 sentences): what the process is about,
+     ideally what starts it and what its result is.
+  B. A STEP-BY-STEP DESCRIPTION: the steps of the process in order, preferably as a numbered list (1., 2., 3. …),
+     each step one activity – who does what, with which documents or resources, and what happens at decisions.
 
-    if not GROQ_API_KEY or len(GROQ_API_KEY) < 10:
-        raise HTTPException(status_code=503, detail="Nastav GROQ_API_KEY v .env.")
+Your main task is to check whether YOU understand each step well enough to draw it in a process diagram.
 
+Review rules:
+1. overview_present: true only if there is a short overview of the process in the user's own words (separate from the steps).
+   steps_listed: true only if the process is described step by step in a clear order (a numbered list is preferred).
+2. step_checks: one item for EVERY step of the step-by-step description, in order ("number" = its number in the text, or the order if unnumbered;
+   "text" = a short name of the step). If there is no step-by-step part, split the text into its activities and check those.
+   A step is clear (clear = true) only if you know WHAT is done and WHO does it, and – if it is a decision – what happens in each case.
+   If a step is unclear, set clear = false and write in "issue" one short sentence saying exactly what is missing or ambiguous
+   (e.g. "It is not stated who approves the request.", "It is unclear what happens if the goods are not in stock.", "Two different activities are mixed in one step.").
+   Do not mark a step unclear because of missing time or cost.
+3. The five aspects – mark each true only if the description (overview or steps) really covers it; do not guess:
+   trigger_defined (what starts the process), activities_identified (concrete activities in a clear order), roles_specified (who performs the activities),
+   resources_identified (documents, forms, systems or tools used), outcome_defined (the expected result / how the process ends).
+4. actor_assignments_clear: true only if every step says who performs it. unclear_tasks: steps whose performer is unclear (quoted or briefly named). Do not invent actors.
+6. overall_review: 1–2 sentences on whether the description is understandable and what matters most. If the description is short or still
+   being written, phrase it as an interim review. Be factual, brief and encouraging.
+7. Respond in English, keep people's names and do not judge grammar.
+8. activity_count: the number of separate activities in the description (several activities in one step count separately; a decision is an activity too).
+9. questions – STRICTLY limited to the structure above. Ask a question ONLY for:
+   a) a step you marked clear = false: target "step:<number>", and the question asks exactly about that step's "issue"
+      (who performs it, or what happens in the undescribed case of a decision) – mention the step number in the question;
+   b) a missing aspect: target "trigger" (if trigger_defined is false), "outcome" (if outcome_defined is false),
+      or "roles" (if roles_specified is false and no step question already asks who performs a step).
+   Never ask about resources or documents. Priority: unclear steps first (in order), then trigger, outcome, roles.
+   At most 3 questions, one per target.
+   Do NOT ask anything else: no questions about time, duration, costs, frequency, volumes, exceptions or details the description does not mention,
+   IT systems beyond what a step needs, improvements, or anything a "Clarification:" line has already answered. If everything is clear, return an empty list.
+   Give 2–3 options for each question, taken from the roles, activities and documents the description already contains (do not invent new ones);
+   "clarification" is a full sentence that gets appended to the description, written in the same language as the description."""
+
+    # groq_json waits and retries once on a short Groq rate limit; low reasoning effort keeps the review fast
+    review = groq_json(review_instructions, prompt, max_tokens=3000, temperature=0.2, reasoning_effort="low")
     try:
-        response = requests.post(
-            GROQ_URL,
-            headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-            json={
-                "model": GROQ_MODEL,
-                "messages": [
-                    {"role": "system", "content": review_instructions},
-                    {"role": "user", "content": prompt},
-                ],
-                "max_completion_tokens": 1800,
-                "temperature": 0.2,
-                "response_format": {"type": "json_object"},
-                "reasoning_format": "hidden",
-            },
-            timeout=90,
-        )
-        response.raise_for_status()
-        choices = response.json().get("choices", [])
-        if not choices:
-            raise ValueError("Groq API nevrátil žiadnu odpoveď.")
-        content = choices[0].get("message", {}).get("content", "")
-        review = json.loads(content)
-        # Otázky sú doplnok – neplatné položky radšej vynecháme, než aby padla celá kontrola
-        questions = []
-        for q in review.get("questions") or []:
-            if not isinstance(q, dict) or not str(q.get("question") or "").strip():
+        step_checks = []
+        for item in review.get("step_checks") or []:
+            if not isinstance(item, dict) or not str(item.get("text") or "").strip():
                 continue
-            options = [ReviewOption(label=str(o["label"]).strip(), clarification=str(o.get("clarification") or o["label"]).strip())
-                       for o in (q.get("options") or []) if isinstance(o, dict) and str(o.get("label") or "").strip()]
-            questions.append(ReviewQuestion(question=str(q["question"]).strip(), options=options[:3]))
-        review["questions"] = questions[:3]
+            clear = item.get("clear") is not False and str(item.get("clear")).lower() != "false"
+            step_checks.append(StepCheck(number=str(item.get("number") or len(step_checks) + 1).strip(),
+                                         text=str(item["text"]).strip(), clear=clear,
+                                         issue="" if clear else str(item.get("issue") or "").strip()))
+        review["step_checks"] = step_checks[:30]
+        for flag in ("overview_present", "steps_listed", "trigger_defined", "activities_identified", "roles_specified",
+                     "resources_identified", "outcome_defined", "actor_assignments_clear"):
+            review[flag] = str(review.get(flag)).strip().lower() == "true"
+        review["questions"] = _structured_questions(review.get("questions"), review)
+        review["suggestions"] = _structural_suggestions(review)
         try:
             review["activity_count"] = max(0, int(review.get("activity_count") or 0))
         except (TypeError, ValueError):
             review["activity_count"] = 0
         return PromptReviewResponse.parse_obj(review)
-    except requests.exceptions.RequestException as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Groq API nie je dostupné: {exc.response.text[:400] if exc.response is not None else str(exc)[:160]}",
-        ) from exc
     except (ValueError, TypeError, AttributeError) as exc:
         raise HTTPException(
             status_code=502,
-            detail=f"Groq API vrátilo neplatnú odpoveď: {str(exc)[:160]}",
+            detail=f"Groq API returned an invalid response: {str(exc)[:160]}",
         ) from exc
 
 
 @app.post("/assistant-chat", response_model=AssistantChatResponse)
 def assistant_chat(input: AssistantChatRequest) -> AssistantChatResponse:
     if not GROQ_API_KEY or len(GROQ_API_KEY) < 10:
-        raise HTTPException(status_code=503, detail="Nastav GROQ_API_KEY v .env.")
+        raise HTTPException(status_code=503, detail="Set GROQ_API_KEY in .env.")
 
-    diagram_context = "Žiadny diagram ešte nie je otvorený."
+    diagram_context = "No diagram is open yet."
     if input.current_model:
         diagram_context = json.dumps(input.current_model, ensure_ascii=False)[:16000]
 
-    system_prompt = f"""Si doplnkový AI asistent v aplikácii Prompt2Flow na tvorbu business procesov.
-Pomáhaj používateľovi premýšľať nad krokmi, rolami, rozhodnutiami, rizikami a zrozumiteľným opisom procesu. Odpovedaj prirodzene v jazyku používateľa, stručne a vecne. Ak je požiadavka nejasná, polož jednu konkrétnu otázku. Nehovor, že si zmenil alebo uložil diagram — iba radíš v tomto chate.
+    system_prompt = f"""You are an auxiliary AI assistant in Prompt2Flow, an app for creating business processes.
+Help the user think through steps, roles, decisions, risks and a clear process description. Answer in English, briefly and to the point. If the request is unclear, ask one concrete question. Do not claim that you changed or saved the diagram — you only give advice in this chat.
 
-Opis procesu v editore:
-{input.process_description or "(zatiaľ prázdny)"}
+Process description in the editor:
+{input.process_description or "(empty so far)"}
 
-Aktuálny diagram:
+Current diagram:
 {diagram_context}"""
 
     messages = [{"role": "system", "content": system_prompt}]
@@ -1091,21 +1230,21 @@ Aktuálny diagram:
         response.raise_for_status()
         choices = response.json().get("choices", [])
         if not choices:
-            raise ValueError("Groq API nevrátilo žiadnu odpoveď.")
+            raise ValueError("Groq API returned no response.")
         reply = choices[0].get("message", {}).get("content", "").strip()
         if not reply:
-            raise ValueError("Groq API vrátilo prázdnu odpoveď.")
+            raise ValueError("Groq API returned an empty response.")
         return AssistantChatResponse(reply=reply)
     except requests.exceptions.RequestException as exc:
-        raise HTTPException(status_code=503, detail=f"Groq API nie je dostupné: {exc.response.text[:400] if exc.response is not None else str(exc)[:160]}") from exc
+        raise HTTPException(status_code=503, detail=f"Groq API is unavailable: {exc.response.text[:400] if exc.response is not None else str(exc)[:160]}") from exc
     except (ValueError, TypeError, AttributeError) as exc:
-        raise HTTPException(status_code=502, detail=f"Asistent vrátil neplatnú odpoveď: {str(exc)[:160]}") from exc
+        raise HTTPException(status_code=502, detail=f"The assistant returned an invalid response: {str(exc)[:160]}") from exc
 
 
 @app.post("/catalog", response_model=dict)
 def save_to_catalog(payload: CatalogSaveRequest, current_user: dict = Depends(get_current_user)):
     user_id = current_user["user_id"]
-    category = payload.category if payload.category in PREDEFINED_CATEGORIES else "Iné"
+    category = payload.category if payload.category in PREDEFINED_CATEGORIES else DEFAULT_CATEGORY
 
     with get_db() as conn:
         cursor = get_cursor(conn)
@@ -1139,11 +1278,11 @@ def save_to_catalog(payload: CatalogSaveRequest, current_user: dict = Depends(ge
 
 
 @app.get("/catalog", response_model=List[dict])
-def list_catalog(q: str = Query(None, description="Fulltext hľadanie"),
-                 category: str = Query(None, description="Filter podľa kategórie"),
+def list_catalog(q: str = Query(None, description="Full-text search"),
+                 category: str = Query(None, description="Filter by category"),
                  current_user: dict = Depends(get_current_user)):
     user_id = current_user["user_id"]
-    admin_env = os.getenv("ADMIN_USER")  # OPRAVENÉ NA ENV PREMENNÚ
+    admin_env = os.getenv("ADMIN_USER")
     is_admin = admin_env and current_user["username"] == admin_env
 
     with get_db() as conn:
@@ -1162,7 +1301,7 @@ def list_catalog(q: str = Query(None, description="Fulltext hľadanie"),
                 f"(p.title LIKE {PARAM_MARKER} OR p.prompt LIKE {PARAM_MARKER} OR p.model_json LIKE {PARAM_MARKER})")
             params.extend([like, like, like])
 
-        if category and category not in ["", "Všetky"]:
+        if category and category not in ALL_CATEGORIES_FILTER:
             conditions.append(f"p.category = {PARAM_MARKER}")
             params.append(category)
 
@@ -1182,7 +1321,7 @@ def list_catalog(q: str = Query(None, description="Fulltext hľadanie"),
             r["owner"] = r["username"]
 
             if not r.get("category"):
-                r["category"] = "Iné"
+                r["category"] = DEFAULT_CATEGORY
 
             if isinstance(r.get("model_json"), str):
                 try:
@@ -1211,17 +1350,17 @@ def get_process(process_id: int, current_user: dict = Depends(get_current_user))
         row = cursor.fetchone()
 
         if not row:
-            raise HTTPException(status_code=404, detail=f"Proces {process_id} neexistuje")
+            raise HTTPException(status_code=404, detail=f"Process {process_id} does not exist")
 
         if not is_admin and row["user_id"] != user_id and not row["is_public"]:
-            raise HTTPException(status_code=403, detail="Nemáš prístup k tomuto diagramu")
+            raise HTTPException(status_code=403, detail="You do not have access to this diagram")
 
         result = dict(row)
         result["model_json"] = json.loads(result["model_json"])
         result["owner"] = result["username"]
 
         if not result.get("category"):
-            result["category"] = "Iné"
+            result["category"] = DEFAULT_CATEGORY
 
     return result
 
@@ -1236,10 +1375,10 @@ def delete_process(process_id: int, current_user: dict = Depends(get_current_use
         row = cursor.fetchone()
 
         if not row:
-            raise HTTPException(status_code=404, detail=f"Proces #{process_id} neexistuje")
+            raise HTTPException(status_code=404, detail=f"Process #{process_id} does not exist")
 
         if row["user_id"] != user_id:
-            raise HTTPException(status_code=403, detail="Môžeš zmazať len svoje vlastné diagramy")
+            raise HTTPException(status_code=403, detail="You can only delete your own diagrams")
 
         cursor.execute(f"DELETE FROM processes WHERE id = {PARAM_MARKER}", (process_id,))
         conn.commit()
@@ -1258,10 +1397,10 @@ def update_visibility(process_id: int, payload: VisibilityUpdate, current_user: 
         row = cursor.fetchone()
 
         if not row:
-            raise HTTPException(status_code=404, detail="Proces neexistuje")
+            raise HTTPException(status_code=404, detail="Process does not exist")
 
         if not is_admin and row["user_id"] != user_id:
-            raise HTTPException(status_code=403, detail="Môžeš upravovať len svoje diagramy")
+            raise HTTPException(status_code=403, detail="You can only edit your own diagrams")
 
         is_pub = payload.is_public if USE_POSTGRES else (1 if payload.is_public else 0)
 
@@ -1274,37 +1413,38 @@ def update_visibility(process_id: int, payload: VisibilityUpdate, current_user: 
 
 def edit_diagram_with_ai(instruction: str, current_model: dict) -> ProcessModel:
     if not GROQ_API_KEY or len(GROQ_API_KEY) < 10:
-        return dummy_model("Nastav GROQ_API_KEY v .env")
+        return dummy_model("Set GROQ_API_KEY in .env")
 
     current_json = json.dumps(current_model, ensure_ascii=False, indent=2)
 
-    prompt = f"""Mas existujuci JSON diagram business procesu. Pouzivatel chce urobit zmenu.
-Tvojou JEDINOU ulohou je vratit upraveny JSON a ABSOLUTNE ZIADEN INY TEXT.
+    prompt = f"""You have an existing JSON diagram of a business process. The user wants to make a change.
+Your ONLY task is to return the modified JSON and ABSOLUTELY NO OTHER TEXT.
 
-EXISTUJUCI DIAGRAM:
+EXISTING DIAGRAM:
 {current_json}
 
-POZIADAVKA POUZIVATELA:
+USER REQUEST:
 {instruction}
 
-PRAVIDLA (MUSI STRIKTNE DODRZIA):
-1. Vrat KOMPLETNY JSON objekt v ROVNAKOM formate ako vstup (kluce: "nodes" a "edges").
-2. ZACHOVAJ vsetky povodne ID uzlov a hran, ktore sa NEMENIA.
-3. ZACHOVAJ vsetky povodne hodnoty: duration_minutes, cost_euros, actor - ak ich explicitne nemenies.
-4. Pridavaj/uprav/maz IBA to, co pouzivatel ziada.
-5. Nove uzly dostavaju ID s prefixom "n" (napr. nt1, nt2) a nove hrany "ne1", "ne2" atd.
-6. Kazdy gateway musi mat aspon 2 odchadzajuce hrany s vyplnenym label.
-7. Posledny element v zoznamoch NESMIE mat ciarku!
-8. Vrat LEN validny JSON bez akehokolvek textu pred alebo za nim.
+RULES (MUST BE FOLLOWED STRICTLY):
+1. Return the COMPLETE JSON object in the SAME format as the input (keys: "nodes" and "edges").
+2. KEEP all original IDs of nodes and edges that do NOT change.
+3. KEEP all original values: duration_minutes, cost_euros, actor – unless you change them explicitly.
+4. Add/modify/delete ONLY what the user asks for.
+5. New nodes get IDs with the prefix "n" (e.g. nt1, nt2) and new edges "ne1", "ne2", etc.
+6. Every gateway must have at least 2 outgoing edges with a filled-in label.
+7. The last element of a list MUST NOT be followed by a comma!
+8. Return ONLY valid JSON without any text before or after it.
+9. Write all new and changed labels, conditions and roles in English, even if the user's request is written in another language.
 
-PRAVIDLA PRE PRESNE VYKONANIE POZIADAVKY:
-9. Najprv urci cielovy uzol podla jeho nazvu (label); nemen iny uzol len preto, ze ma podobny nazov.
-10. Pri poziadavke "po/za uzlom X pridaj Y" vloz novy uzol Y bezprostredne za X: odstran povodnu hranu X -> N a vytvor X -> Y a Y -> N. Zachovaj povodny uzol N aj jeho dalsie napojenia.
-11. Ak pouzivatel povie "pripoj k dalsiemu kroku v existujucom procese", pripoj novy uzol do povodneho toku na spravnom mieste; nevytvaraj novu odpojenú vetvu ani novy koncovy uzol.
-12. Pri pridani uzla prenes presne zadany nazov, rolu/aktora, trvanie a naklady. Trvanie zapis do duration_minutes ako cislo v minutach (napr. 1 minute = 1); naklady zapis do cost_euros ako cislo v EUR (napr. €0.50 = 0.5).
-13. Ak je cielovy uzol alebo napojenie nejednoznacne, zachovaj diagram a nerob nepodlozene zmeny.
-14. Skontroluj, ze vsetky povodne uzly a ich povodne spojenia ostali zachovane okrem hran, ktore bolo potrebne prepojit kvoli poziadovanej zmene.
-15. Pri kazdom uzle typu task bez vyplnenej ceny (vratane novych uzlov) odhadni cost_euros. Pouzi realisticky priblizny odhad v EUR podla cinnosti a roly; ak cinnost nema priame naklady, nastav 0.0. Existujuce cost_euros vzdy zachovaj, pokial pouzivatel vyslovene neziada ich zmenu.
+RULES FOR CARRYING OUT THE REQUEST PRECISELY:
+10. First identify the target node by its name (label); do not change another node just because it has a similar name.
+11. For a request "after node X add Y", insert the new node Y directly after X: remove the original edge X -> N and create X -> Y and Y -> N. Keep the original node N and its other connections.
+12. If the user says "connect to the next step in the existing process", connect the new node into the original flow at the right place; do not create a new disconnected branch or a new end node.
+13. When adding a node, carry over exactly the given name, role/actor, duration and cost. Write the duration into duration_minutes as a number of minutes (e.g. 1 minute = 1); write the cost into cost_euros as a number in EUR (e.g. €0.50 = 0.5).
+14. If the target node or connection is ambiguous, keep the diagram and make no unfounded changes.
+15. Check that all original nodes and their original connections stayed intact, except the edges that had to be reconnected because of the requested change.
+16. For every task node without a cost (including new nodes) estimate cost_euros. Use a realistic approximate estimate in EUR based on the activity and role; if the activity has no direct cost, set 0.0. Always keep existing cost_euros unless the user explicitly asks to change them.
 """
 
     try:
@@ -1327,10 +1467,10 @@ PRAVIDLA PRE PRESNE VYKONANIE POZIADAVKY:
         resp.raise_for_status()
         data = resp.json()
 
-        # ── ROBUSTNÉ parsovanie odpovede (rovnaké ako v generate_diagram_from_text) ──
+        # ── ROBUST response parsing (same as in generate_diagram_from_text) ──
         choices = data.get("choices", [])
         if not choices:
-            raise ValueError("Groq nevrátil žiadne choices")
+            raise ValueError("Groq returned no choices")
 
         first = choices[0]
         if isinstance(first, dict):
@@ -1355,22 +1495,22 @@ PRAVIDLA PRE PRESNE VYKONANIE POZIADAVKY:
             if start_idx != -1 and end_idx > start_idx:
                 diagram = json.loads(content[start_idx:end_idx])
             else:
-                raise ValueError("Groq vratil neplatny JSON")
+                raise ValueError("Groq returned invalid JSON")
 
         if isinstance(diagram, list):
             diagram = diagram[0] if len(diagram) > 0 and isinstance(diagram[0], dict) else {}
 
         if not isinstance(diagram, dict):
-            raise ValueError(f"Neočakávaný typ odpovede: {type(diagram)}")
+            raise ValueError(f"Unexpected response type: {type(diagram)}")
 
-        # ── Mapa pôvodných uzlov (iba dict položky) ──
+        # ── Map of original nodes (dict items only) ──
         original_nodes_map = {
             n["id"]: n
             for n in current_model.get("nodes", [])
             if isinstance(n, dict) and "id" in n
         }
 
-        # ── Spracovanie uzlov (nodes môžu prísť aj ako dict namiesto listu) ──
+        # ── Process nodes (nodes may also arrive as a dict instead of a list) ──
         raw_nodes = diagram.get("nodes", [])
         if not isinstance(raw_nodes, list):
             raw_nodes = list(raw_nodes.values()) if isinstance(raw_nodes, dict) else []
@@ -1385,7 +1525,7 @@ PRAVIDLA PRE PRESNE VYKONANIE POZIADAVKY:
             nodes.append(Node(
                 id=nid,
                 type=str(n.get("type", "task")),
-                label=str(n.get("label", "Neznáma úloha")),
+                label=str(n.get("label", "Unknown task")),
                 actor=n.get("actor") or orig.get("actor"),
                 duration_minutes=n.get("duration_minutes") if n.get("duration_minutes") is not None else orig.get(
                     "duration_minutes"),
@@ -1393,7 +1533,7 @@ PRAVIDLA PRE PRESNE VYKONANIE POZIADAVKY:
             ))
             node_ids.add(nid)
 
-        # ── Spracovanie hrán (edges môžu prísť aj ako dict namiesto listu) ──
+        # ── Process edges (edges may also arrive as a dict instead of a list) ──
         raw_edges = diagram.get("edges", [])
         if not isinstance(raw_edges, list):
             raw_edges = list(raw_edges.values()) if isinstance(raw_edges, dict) else []
@@ -1415,8 +1555,8 @@ PRAVIDLA PRE PRESNE VYKONANIE POZIADAVKY:
         return ProcessModel(nodes=nodes, edges=edges)
 
     except Exception as exc:
-        print(f"Copilot chyba: {exc}")
-        return dummy_model(f"Copilot chyba: {str(exc)[:40]}")
+        print(f"Copilot error: {exc}")
+        return dummy_model(f"Copilot error: {str(exc)[:40]}")
 
 
 @app.post("/edit-model", response_model=ProcessModel)
@@ -1426,13 +1566,13 @@ def edit_model(input: EditModelRequest) -> ProcessModel:
 
 @app.get("/public-catalog", response_model=List[dict])
 def list_public_catalog(
-        q: str = Query("", description="Fulltext hľadanie"),
-        category: str = Query("", description="Filter podľa kategórie"),
+        q: str = Query("", description="Full-text search"),
+        category: str = Query("", description="Filter by category"),
 ):
     with get_db() as conn:
         cursor = get_cursor(conn)
 
-        # Pre postgres používame booleany, pre sqlite 1/0
+        # Postgres uses booleans, SQLite uses 1/0
         is_pub_cond = "p.is_public = TRUE" if USE_POSTGRES else "p.is_public = 1"
         conditions = [is_pub_cond]
         params = []
@@ -1443,7 +1583,7 @@ def list_public_catalog(
                 f"(p.title LIKE {PARAM_MARKER} OR p.prompt LIKE {PARAM_MARKER} OR p.model_json LIKE {PARAM_MARKER})")
             params.extend([like, like, like])
 
-        if category and category not in ("", "Všetky"):
+        if category and category not in ALL_CATEGORIES_FILTER:
             conditions.append(f"p.category = {PARAM_MARKER}")
             params.append(category)
 
@@ -1468,7 +1608,7 @@ def list_public_catalog(
             r["is_public"] = True
             r["owner"] = r["username"]
             if not r.get("category"):
-                r["category"] = "Iné"
+                r["category"] = DEFAULT_CATEGORY
             if isinstance(r.get("model_json"), str):
                 try:
                     r["model_json"] = json.loads(r["model_json"])
