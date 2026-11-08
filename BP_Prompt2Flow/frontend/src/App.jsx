@@ -521,11 +521,11 @@ async function generateDiagramFromText(description, minNodes, maxNodes, includeK
   return response.json();
 }
 
-async function evaluateGeneratedDiagram(description, model) {
+async function evaluateGeneratedDiagram(description, model, evaluator = 'gemini') {
   const response = await fetch(`${API}/evaluate-model`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ description, model }),
+    body: JSON.stringify({ description, model, evaluator }),
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.detail || `Semantic comparison failed (${response.status})`);
@@ -617,6 +617,7 @@ function App() {
   const [isDiagramAccuracyLoading, setIsDiagramAccuracyLoading] = useState(false);
   const [diagramAccuracyError, setDiagramAccuracyError] = useState('');
   const [accuracySignature, setAccuracySignature] = useState(null);
+  const [accuracyEvaluator, setAccuracyEvaluator] = useState('gemini');
   const accuracyRequestRef = useRef(0);
   const accuracyAttemptRef = useRef(null);
   const [showStatsModal, setShowStatsModal] = useState(false);
@@ -886,7 +887,7 @@ function App() {
   };
 
   // Compares the diagram with the description; signature = the diagram state the result belongs to
-  const runAccuracyCheck = (model, description, signature) => {
+  const runAccuracyCheck = (model, description, signature, evaluator = accuracyEvaluator) => {
     const requestId = accuracyRequestRef.current + 1;
     accuracyRequestRef.current = requestId;
     accuracyAttemptRef.current = signature;
@@ -898,7 +899,7 @@ function App() {
       return;
     }
     setIsDiagramAccuracyLoading(true);
-    evaluateGeneratedDiagram(description, model)
+    evaluateGeneratedDiagram(description, model, evaluator)
       // The signature changes only on success so a failed recheck does not hide that the result is stale
       .then((result) => { if (accuracyRequestRef.current === requestId) { setDiagramAccuracy(result); setAccuracySignature(signature); } })
       .catch((error) => { if (accuracyRequestRef.current === requestId) setDiagramAccuracyError(error.message); })
@@ -2472,6 +2473,8 @@ function App() {
             accuracyError={diagramAccuracyError}
             isAccuracyStale={isAccuracyStale}
             onRecheckAccuracy={() => runAccuracyCheck(currentModel, promptText, structureSignature)}
+            accuracyEvaluator={accuracyEvaluator}
+            onAccuracyEvaluatorChange={(evaluator) => { setAccuracyEvaluator(evaluator); runAccuracyCheck(currentModel, promptText, structureSignature, evaluator); }}
             hasDescription={Boolean(promptText.trim())}
           />
         </div>}

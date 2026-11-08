@@ -330,12 +330,20 @@ function ScoreRing({ value }) {
   </div>;
 }
 
-function MatchChapter({ accuracy, isLoading, error, isStale, onRecheck, hasDescription }) {
+const EVALUATORS = [{ key: 'gemini', label: 'Gemini' }, { key: 'nvidia', label: 'NVIDIA' }];
+
+function EvaluatorSwitch({ value, onChange, disabled }) {
+  return <div className="p2f-seg" role="group" aria-label="Evaluator model">
+    {EVALUATORS.map((e) => <button key={e.key} type="button" className={`p2f-seg__btn${value === e.key ? ' is-active' : ''}`} aria-pressed={value === e.key} onClick={() => value !== e.key && onChange(e.key)} disabled={disabled} title={`Evaluate with ${e.label}`} style={{ width: 'auto', padding: '0 10px', fontWeight: value === e.key ? 700 : 400 }}>{e.label}</button>)}
+  </div>;
+}
+
+function MatchChapter({ accuracy, isLoading, error, isStale, onRecheck, hasDescription, evaluator, onEvaluatorChange }) {
   if (!hasDescription) {
     return <div className="p2f-report__stack"><p className="p2f-panel__empty">The diagram has no original process description, so there is nothing to compare it with. Describe the process in the "Create process" field and generate a diagram.</p></div>;
   }
   if (isLoading && !accuracy) return <div className="p2f-report__stack"><Loading text="The AI is splitting the description into requirements and checking them in the diagram…" /></div>;
-  if (error && !accuracy) return <div className="p2f-report__stack"><ErrorNote text={error} onRetry={onRecheck} /></div>;
+  if (error && !accuracy) return <div className="p2f-report__stack"><EvaluatorSwitch value={evaluator} onChange={onEvaluatorChange} /><ErrorNote text={error} onRetry={onRecheck} /></div>;
   if (!accuracy) return <div className="p2f-report__stack"><Loading text="Preparing the comparison…" /></div>;
 
   const requirements = [...(accuracy.requirements || [])].sort((a, b) => (STATUS_META[a.status]?.order ?? 0) - (STATUS_META[b.status]?.order ?? 0) || b.importance - a.importance);
@@ -356,6 +364,7 @@ function MatchChapter({ accuracy, isLoading, error, isStale, onRecheck, hasDescr
         </div>
       </div>
       <div className="p2f-match-hero__actions">
+        <EvaluatorSwitch value={evaluator} onChange={onEvaluatorChange} disabled={isLoading} />
         {isStale && !isLoading && <span className="p2f-tag" data-tone="amber">diagram changed</span>}
         {error && <span className="p2f-tag" data-tone="bad" title={error}>recalculation failed</span>}
         <button type="button" className="p2f-btn p2f-btn--sm" onClick={onRecheck} disabled={isLoading}>{isLoading && <span className="p2f-spinner" aria-hidden="true" />}{isLoading ? 'Recalculating…' : 'Recalculate'}</button>
@@ -399,6 +408,7 @@ function MatchChapter({ accuracy, isLoading, error, isStale, onRecheck, hasDescr
       <summary>How the AI read the diagram</summary>
       <pre className="p2f-outline">{accuracy.diagram_prompt}</pre>
     </details>
+    {accuracy.evaluator && <p className="p2f-fineprint">Evaluated by {accuracy.evaluator}.</p>}
     <p className="p2f-fineprint">The AI splits the original description into separate requirements (steps, actors, decisions, order, outcome) and checks each one in the diagram. The score is a weighted share: met = 1, partial = 0.5, missing = 0; weighted by importance 1–3. Extra steps do not lower the score.</p>
   </div>;
 }
@@ -407,7 +417,7 @@ export default function StatsReport({
   chapter, onChapterChange, onClose, workNodes,
   resources, onReloadResources,
   statsReview, isStatsReviewLoading, diagramReview, isDiagramReviewLoading, onRegenerateAdvice,
-  accuracy, isAccuracyLoading, accuracyError, isAccuracyStale, onRecheckAccuracy, hasDescription,
+  accuracy, isAccuracyLoading, accuracyError, isAccuracyStale, onRecheckAccuracy, hasDescription, accuracyEvaluator, onAccuracyEvaluatorChange,
 }) {
   const actorCount = new Set(workNodes.map((node) => node.data?.actor || 'No role')).size;
   const decisionCount = workNodes.filter((node) => node.data?.isDecision).length;
@@ -439,7 +449,7 @@ export default function StatsReport({
         {chapter === 'finance' && <FinanceChapter workNodes={workNodes} />}
         {chapter === 'resources' && <ResourcesChapter workNodes={workNodes} resources={resources} onReload={onReloadResources} />}
         {chapter === 'advice' && <AdviceChapter statsReview={statsReview} isStatsReviewLoading={isStatsReviewLoading} diagramReview={diagramReview} isDiagramReviewLoading={isDiagramReviewLoading} onRegenerate={onRegenerateAdvice} />}
-        {chapter === 'match' && <MatchChapter accuracy={accuracy} isLoading={isAccuracyLoading} error={accuracyError} isStale={isAccuracyStale} onRecheck={onRecheckAccuracy} hasDescription={hasDescription} />}
+        {chapter === 'match' && <MatchChapter accuracy={accuracy} isLoading={isAccuracyLoading} error={accuracyError} isStale={isAccuracyStale} onRecheck={onRecheckAccuracy} hasDescription={hasDescription} evaluator={accuracyEvaluator} onEvaluatorChange={onAccuracyEvaluatorChange} />}
       </div>
     </section>
   );
