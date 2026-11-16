@@ -1,0 +1,27 @@
+business_analyst_ProvatBank:
+Request - build a business process model which describes deployment of the new feature for the existing website. Usually it is developed on a separate git branch. Here are the steps:
+1. Once the feature is ready, the developer pushes it to the staging site and sends the client a message with a brief description and verification step list.
+2. Having tested the feature, the client:
+2a. Confirms everything works as expected.
+2b. Asks to make some adjustments.
+3. The developer receives the feedback from the client:
+3a. Makes changes in case additional modifications are needed and updates the staging site (see #1)
+3b. Merges git branch into the main and pushes the new functionality to the production site, removes the git branch, notifies the client about successful deployment.
+
+regular_person:
+1. Take a bowl, a whisk, two spoons, and a knife. Take the ingredients. Crack the eggs into the bowl, add sugar and vanilla. Heat the milk and pour it in. Mix everything together. Don't pour in all the milk. Before that, take half a glass of milk, heat it, add sugar and yeast, and leave it for 10 minutes. Then pour this whole mixture into our mixture. Add a pinch of salt.
+Take the flour and measure how much we need. Sift the flour and gradually mix it into the dough. When the dough is almost kneaded, measure the butter and add it. Knead until it stops sticking to your hands.
+Cover it with a towel and leave it for an hour.
+Take the apricots, cut them in half, and remove the pits. Wait for the dough to rise.
+When the dough has risen, divide it into individual portions. Take a round piece of dough and go bang, bang, bang, bang, put an apricot inside. Add a teaspoon of sugar as well. Now wrap it up and put it on the baking tray.
+Before that, cover the baking tray with baking paper and turn on the oven.
+Then take one egg. Put the yolk in a small plate and brush the pies with it.
+Put them in the oven for 40, 30, or 20 minutes, until golden brown! The oven should be at 180 degrees.
+And enjoy!
+
+2. Model business process 
+I receive an assignment to dig a 40-meter trench. I go to change into my work clothes. I take a shovel, rebar, and a string and mark out the path. After marking the path, I start digging. Once I have finished digging, I check whether everything has been dug properly, both according to my own judgment and the customer's judgment. When everything is approved, I collect my tools, change my clothes, and finish the work.
+
+3.
+Business Process: Frying an Egg in a Pan
+First, take a frying pan, either non-stick or regular. If it is made of cast iron, add a drop of oil. If it does not have a non-stick coating, use plenty of oil. Put the pan on the stove and wait until it heats up. Crack an egg into the pan without dropping the shell in. Add salt and pepper to taste, then cover the pan with a lid. Wait a couple of minutes, turn off the heat, and scrape the egg off the pan.

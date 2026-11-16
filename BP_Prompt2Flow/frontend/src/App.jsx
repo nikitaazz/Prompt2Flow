@@ -23,6 +23,8 @@ const NODE_WIDTH = 180;
 const NODE_HEIGHT = 50;
 const DECISION_HEIGHT = 80;
 const EVENT_SIZE = 34;
+const BAR_WIDTH = 10;   // UML fork / join bar (vertical, the flow runs left to right)
+const BAR_HEIGHT = 84;
 const LANE_HEIGHT = 200;
 const LANE_HEADER_WIDTH = 140;
 const LANE_PADDING_X = 30;
@@ -68,6 +70,8 @@ const Icons = {
   User: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>,
   Trash: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>,
   Users: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>,
+  Fork: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="9" y2="12"></line><rect x="9" y="4" width="2.5" height="16" fill="currentColor"></rect><polyline points="11.5 7 21 7"></polyline><polyline points="11.5 17 21 17"></polyline></svg>,
+  Join: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 7 12.5 7"></polyline><polyline points="3 17 12.5 17"></polyline><rect x="12.5" y="4" width="2.5" height="16" fill="currentColor"></rect><line x1="15" y1="12" x2="21" y2="12"></line></svg>,
   Align: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="21" y1="10" x2="3" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="21" y1="18" x2="3" y2="18"></line></svg>,
   Save: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>,
   Folder: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>,
@@ -353,6 +357,31 @@ const kpiItemStyle = { display: 'inline-flex', alignItems: 'center', gap: '3px' 
 const isStartEventNode = (node) => node?.data?.nodeType === 'startEvent';
 const isEndEventNode = (node) => node?.data?.nodeType === 'endEvent';
 const isEventNode = (node) => isStartEventNode(node) || isEndEventNode(node);
+// UML fork / join (BPMN parallel gateway): a bar that splits the flow into parallel branches / waits for all of them
+const isBarNode = (node) => node?.data?.nodeType === 'fork' || node?.data?.nodeType === 'join';
+const isControlNode = (node) => isEventNode(node) || isBarNode(node);
+// A node with several outgoing edges is a decision – except start/end and fork/join
+const isDecisionOf = (nodeType, outgoingCount) => !['fork', 'join', 'startEvent', 'endEvent'].includes(nodeType) && outgoingCount > 1;
+
+const BarNode = ({ data, selected }) => {
+  const isInvalid = data.isInvalid === true;
+  const color = selected ? COLORS.accent : isInvalid ? COLORS.danger : '#1c2024';
+  const isFork = data.nodeType === 'fork';
+  return (
+    <div title={isInvalid ? data.validationMsg : (isFork ? 'Fork – the branches run in parallel' : 'Join – waits until all parallel branches are finished')}
+      style={{ width: BAR_WIDTH, height: BAR_HEIGHT, position: 'relative' }}>
+      <Handle type="target" position={Position.Left} className="p2f-handle" style={{ opacity: 0, width: 10, height: 10, left: -5 }} />
+      <div style={{ position: 'absolute', inset: 0, background: color, borderRadius: 2, boxShadow: selected ? '0 2px 6px rgba(29,107,98,.35)' : 'none' }} />
+      <div style={{ position: 'absolute', top: BAR_HEIGHT + 4, left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', fontSize: '10.5px', fontWeight: 500, color: isInvalid ? '#8f2a21' : '#6f757d', pointerEvents: 'none' }}>
+        {data.baseLabel || (isFork ? 'Fork' : 'Join')}
+      </div>
+      {isInvalid && (
+        <div title={data.validationMsg} style={{ position: 'absolute', top: -10, left: -5, background: COLORS.danger, color: 'white', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 600, border: '2px solid #fff', cursor: 'help' }}>!</div>
+      )}
+      <Handle type="source" position={Position.Right} className="p2f-handle" style={{ opacity: 0, width: 10, height: 10, right: -5 }} />
+    </div>
+  );
+};
 
 const EventNode = ({ data, selected }) => {
   const isStart = data.nodeType === 'startEvent';
@@ -381,6 +410,7 @@ const EventNode = ({ data, selected }) => {
 // ── CUSTOM NODE COMPONENT ─────────────────────────────────
 const TaskNode = ({ data, selected }) => {
   if (data.nodeType === 'startEvent' || data.nodeType === 'endEvent') return <EventNode data={data} selected={selected} />;
+  if (data.nodeType === 'fork' || data.nodeType === 'join') return <BarNode data={data} selected={selected} />;
   const isDecision = data.isDecision === true;
   const isInvalid = data.isInvalid === true;
   const strokeColor = selected ? COLORS.accent : isInvalid ? COLORS.danger : isDecision ? '#b8954a' : '#c4bfb3';
@@ -455,7 +485,7 @@ const stripLaneProps = (nodes) => nodes.filter((n) => n.type !== 'swimlane').map
 function withStartEnd(taskList, edgeList, edgeDefaults) {
   const hasIn = (id, list) => list.some((e) => e.target === id);
   const hasOut = (id, list) => list.some((e) => e.source === id);
-  let nodesOut = taskList.map((n) => isEventNode(n) ? { ...n, data: { ...n.data, isDecision: false } } : n);
+  let nodesOut = taskList.map((n) => isControlNode(n) ? { ...n, data: { ...n.data, isDecision: false } } : n);
   const convert = (nodeType, isCandidate) => {
     if (nodesOut.some((n) => n.data?.nodeType === nodeType)) return;
     const candidate = nodesOut.find(isCandidate);
@@ -521,11 +551,11 @@ async function generateDiagramFromText(description, minNodes, maxNodes, includeK
   return response.json();
 }
 
-async function evaluateGeneratedDiagram(description, model) {
+async function evaluateGeneratedDiagram(description, model, evaluator = 'nvidia') {
   const response = await fetch(`${API}/evaluate-model`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ description, model }),
+    body: JSON.stringify({ description, model, evaluator }),
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.detail || `Semantic comparison failed (${response.status})`);
@@ -574,12 +604,15 @@ async function reviewDiagramWithAI(model, processDescription) {
   return result.reply;
 }
 
-async function reviewStatsWithAI(model, processDescription) {
-  const result = await requestAssistantReply([{
-    role: 'user',
-    content: 'Write a short bottleneck analysis of this business process for the statistics window. First find the step with the highest stated duration and/or cost, using only the KPI values from the diagram. Answer in English in this format:\nBOTTLENECK STEP: the step name and its duration/cost, if stated.\nRECOMMENDATION: what exactly to speed up or make cheaper.\nPOSSIBLE REPLACEMENT: a concrete alternative method or step that could replace or improve the current one.\nIf KPIs are missing, say plainly that the bottleneck cannot be determined by time/cost and give one structural recommendation without invented numbers. Do not repeat the general diagram review. Do not use Markdown (no ** or #); start each section on a new line.',
-  }], processDescription, model);
-  return result.reply;
+async function fetchProcessAdvice(description, model) {
+  const response = await fetch(`${API}/process-advice`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ description, model }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || `Improvement ideas failed (${response.status})`);
+  return data;
 }
 
 const SidebarButton = ({ icon: Icon, label, onClick, disabled, variant = 'default', fullWidth = false }) => (
@@ -611,18 +644,17 @@ function App() {
   const [adviceMode, setAdviceMode] = useState('prompt');
   const [diagramReview, setDiagramReview] = useState('');
   const [isDiagramReviewLoading, setIsDiagramReviewLoading] = useState(false);
-  const [statsReview, setStatsReview] = useState('');
-  const [isStatsReviewLoading, setIsStatsReviewLoading] = useState(false);
   const [diagramAccuracy, setDiagramAccuracy] = useState(null);
   const [isDiagramAccuracyLoading, setIsDiagramAccuracyLoading] = useState(false);
   const [diagramAccuracyError, setDiagramAccuracyError] = useState('');
   const [accuracySignature, setAccuracySignature] = useState(null);
+  const [accuracyEvaluator, setAccuracyEvaluator] = useState('nvidia');
   const accuracyRequestRef = useRef(0);
   const accuracyAttemptRef = useRef(null);
   const [showStatsModal, setShowStatsModal] = useState(false);
   const [statsChapter, setStatsChapter] = useState('finance');
-  const [statsReviewSignature, setStatsReviewSignature] = useState(null);
-  const [diagramReviewSignature, setDiagramReviewSignature] = useState(null);
+  const [advice, setAdvice] = useState({ data: null, loading: false, error: '', signature: null });
+  const adviceRequestRef = useRef(0);
   const [resources, setResources] = useState({ data: null, loading: false, error: '', signature: null });
   const resourcesRequestRef = useRef(0);
   const [showToolsPanel, setShowToolsPanel] = useState(false);
@@ -772,6 +804,12 @@ function App() {
         } else if (!isEnd && outgoingCount === 0) {
           isInvalid = true;
           validationMsg = 'Error – missing outgoing edge! The process ends here unexpectedly – a dead end.';
+        } else if (n.data.nodeType === 'fork' && (outgoingCount < 2 || incomingCount > 1)) {
+          isInvalid = true;
+          validationMsg = 'Error – a fork needs exactly 1 incoming edge and at least 2 parallel outgoing branches.';
+        } else if (n.data.nodeType === 'join' && (incomingCount < 2 || outgoingCount > 1)) {
+          isInvalid = true;
+          validationMsg = 'Error – a join needs at least 2 incoming parallel branches and exactly 1 outgoing edge.';
         }
 
         if (n.data.isInvalid !== isInvalid || n.data.validationMsg !== validationMsg) {
@@ -856,7 +894,7 @@ function App() {
   const taskNodes = nodes.filter((n) => n.type !== 'swimlane');
   const firstSwimlane = nodes.find((n) => n.type === 'swimlane');
   const laneControls = firstSwimlane?.data;
-  const workNodes = taskNodes.filter((n) => !isEventNode(n));
+  const workNodes = taskNodes.filter((n) => !isControlNode(n));
   const currentModel = serializeModel(taskNodes, edges);
   const modelSignature = JSON.stringify(currentModel);
   const structureSignature = structureSignatureOf(taskNodes, edges);
@@ -865,9 +903,6 @@ function App() {
   const showDiagramReview = (model, description) => {
     setAdviceMode('diagram');
     setDiagramReview('');
-    setStatsReview('');
-    setStatsReviewSignature(null);
-    setDiagramReviewSignature(JSON.stringify(model));
     setIsDiagramReviewLoading(true);
     reviewDiagramWithAI(model, description)
       .then(setDiagramReview)
@@ -875,18 +910,18 @@ function App() {
       .finally(() => setIsDiagramReviewLoading(false));
   };
 
-  const showStatsReview = (model, description) => {
-    setStatsReview('');
-    setStatsReviewSignature(JSON.stringify(model));
-    setIsStatsReviewLoading(true);
-    reviewStatsWithAI(model, description)
-      .then(setStatsReview)
-      .catch((error) => setStatsReview(`Could not load the AI statistics analysis: ${error.message}`))
-      .finally(() => setIsStatsReviewLoading(false));
+  // Improvement ideas (remove / redesign / automate) for the "AI recommendations" chapter
+  const loadAdvice = (model, description, signature) => {
+    const requestId = adviceRequestRef.current + 1;
+    adviceRequestRef.current = requestId;
+    setAdvice((prev) => ({ ...prev, loading: true, error: '', signature }));
+    fetchProcessAdvice(description, model)
+      .then((data) => { if (adviceRequestRef.current === requestId) setAdvice({ data, loading: false, error: '', signature }); })
+      .catch((error) => { if (adviceRequestRef.current === requestId) setAdvice((prev) => ({ ...prev, loading: false, error: error.message })); });
   };
 
   // Compares the diagram with the description; signature = the diagram state the result belongs to
-  const runAccuracyCheck = (model, description, signature) => {
+  const runAccuracyCheck = (model, description, signature, evaluator = accuracyEvaluator) => {
     const requestId = accuracyRequestRef.current + 1;
     accuracyRequestRef.current = requestId;
     accuracyAttemptRef.current = signature;
@@ -898,7 +933,7 @@ function App() {
       return;
     }
     setIsDiagramAccuracyLoading(true);
-    evaluateGeneratedDiagram(description, model)
+    evaluateGeneratedDiagram(description, model, evaluator)
       // The signature changes only on success so a failed recheck does not hide that the result is stale
       .then((result) => { if (accuracyRequestRef.current === requestId) { setDiagramAccuracy(result); setAccuracySignature(signature); } })
       .catch((error) => { if (accuracyRequestRef.current === requestId) setDiagramAccuracyError(error.message); })
@@ -924,8 +959,8 @@ function App() {
     setAccuracySignature(null);
     accuracyAttemptRef.current = null;
     setResources({ data: null, loading: false, error: '', signature: null });
-    setStatsReview('');
-    setStatsReviewSignature(null);
+    adviceRequestRef.current += 1;
+    setAdvice({ data: null, loading: false, error: '', signature: null });
   };
 
   const openStats = (chapter = 'finance') => {
@@ -939,10 +974,8 @@ function App() {
     if (statsChapter === 'resources' && resources.signature !== modelSignature && !resources.loading) {
       loadResources(currentModel, promptText, modelSignature);
     }
-    if (statsChapter === 'advice') {
-      // showDiagramReview resets the bottleneck analysis, so it runs first
-      if (diagramReviewSignature !== modelSignature && !isDiagramReviewLoading) showDiagramReview(currentModel, promptText);
-      if ((statsReviewSignature !== modelSignature || diagramReviewSignature !== modelSignature) && !isStatsReviewLoading) showStatsReview(currentModel, promptText);
+    if (statsChapter === 'advice' && advice.signature !== modelSignature && !advice.loading) {
+      loadAdvice(currentModel, promptText, modelSignature);
     }
     if (statsChapter === 'match' && accuracyAttemptRef.current !== structureSignature && !isDiagramAccuracyLoading) {
       runAccuracyCheck(currentModel, promptText, structureSignature);
@@ -1033,8 +1066,8 @@ function App() {
   };
 
   const onConnect = useCallback(async (params) => {
-    // Only plain edges leave the start node – it is not a decision, so no conditions are asked for
-    if (isEventNode(nodes.find((n) => n.id === params.source))) {
+    // Only plain edges leave the start node and fork/join – they are not decisions, so no conditions are asked for
+    if (isControlNode(nodes.find((n) => n.id === params.source))) {
       const nextEdges = addEdge({ ...params, ...edgeOptions, label: null }, edges);
       setEdges(nextEdges);
       saveHistory(nodes, nextEdges);
@@ -1087,6 +1120,13 @@ function App() {
     // Start/end have no role of their own – they belong to the lane of the first following / last preceding step
     const actorOfStep = (id) => inputTaskNodes.find((n) => n.id === id && !isEventNode(n))?.data?.actor || '';
     const currentTaskNodes = inputTaskNodes.map((n) => {
+      if (isBarNode(n)) {
+        if (n.data.actor) return n;
+        const near = currentEdges.filter((e) => e.target === n.id).map((e) => e.source)
+          .concat(currentEdges.filter((e) => e.source === n.id).map((e) => e.target));
+        const barActor = near.map(actorOfStep).find(Boolean) || '';
+        return barActor ? { ...n, data: { ...n.data, actor: barActor } } : n;
+      }
       if (!isEventNode(n)) return n;
       const neighbours = isStartEventNode(n)
         ? currentEdges.filter((e) => e.source === n.id).map((e) => e.target)
@@ -1101,6 +1141,7 @@ function App() {
 
     const sizeOf = (n) => isEventNode(n)
       ? { width: EVENT_SIZE, height: EVENT_SIZE }
+      : isBarNode(n) ? { width: BAR_WIDTH, height: BAR_HEIGHT }
       : { width: NODE_WIDTH, height: n.data?.isDecision === true ? DECISION_HEIGHT : NODE_HEIGHT };
     currentTaskNodes.forEach((n) => g.setNode(n.id, sizeOf(n)));
     currentEdges.forEach((e) => g.setEdge(e.source, e.target));
@@ -1176,7 +1217,7 @@ function App() {
           baseLabel: node.label, 
           actor: node.actor || '', 
           nodeType: node.type || 'task', 
-          isDecision: (outgoingCounts[node.id] || 0) > 1,
+          isDecision: isDecisionOf(node.type || 'task', outgoingCounts[node.id] || 0),
           durationMinutes: node.duration_minutes ?? null,
           costEuros: node.cost_euros ?? null,
         },
@@ -1406,7 +1447,7 @@ function App() {
     const isEndNode   = n => isEndEventNode(n) || n.id === 'end'   || (n.data.baseLabel || n.data.label || '').toLowerCase().includes('koniec');
     const nodeSize    = n => {
       if (isStartNode(n) || isEndNode(n)) return { w: SE_SIZE, h: SE_SIZE };
-      if (n.data.isDecision)               return { w: GW_SIZE, h: GW_SIZE };
+      if (isBarNode(n) || n.data.isDecision) return { w: GW_SIZE, h: GW_SIZE };
       return { w: NODE_W, h: NODE_H };
     };
 
@@ -1445,6 +1486,7 @@ function App() {
       let et = 'bpmn:task';
       if (isStartNode(n))         et = 'bpmn:startEvent';
       else if (isEndNode(n))      et = 'bpmn:endEvent';
+      else if (isBarNode(n))      et = 'bpmn:parallelGateway';   // UML fork / join
       else if (n.data.isDecision) et = 'bpmn:exclusiveGateway';
 
       bpmnNodes += '\n    <' + et + ' id="' + n.id + '" name="' + esc(lbl) + '">';
@@ -1487,7 +1529,7 @@ function App() {
     taskNodes.forEach(n => {
       const p = nodePos[n.id];
       diShapes += '\n      <bpmndi:BPMNShape id="' + n.id + '_di" bpmnElement="' + n.id + '"'
-        + (n.data.isDecision ? ' isMarkerVisible="true"' : '') + '>'
+        + (n.data.isDecision && !isBarNode(n) ? ' isMarkerVisible="true"' : '') + '>'
         + '\n        <dc:Bounds x="' + p.x + '" y="' + p.y + '" width="' + p.w + '" height="' + p.h + '" />'
         + '\n      </bpmndi:BPMNShape>';
     });
@@ -1632,6 +1674,8 @@ function App() {
       let type = 'uml:OpaqueAction';
       if (isStart) type = 'uml:InitialNode';
       else if (isEnd) type = 'uml:ActivityFinalNode';
+      else if (n.data.nodeType === 'fork') type = 'uml:ForkNode';
+      else if (n.data.nodeType === 'join') type = 'uml:JoinNode';
       else if (n.data.isDecision) type = 'uml:DecisionNode';
 
       nodesXml += `\n        <node xmi:type="${type}" xmi:id="${n.id}" name="${lbl}" />`;
@@ -1798,6 +1842,7 @@ function App() {
     const isEndNode   = n => isEndEventNode(n) || n.id === 'end'   || (n.data.baseLabel || n.data.label || '').toLowerCase().includes('koniec');
     const nodeSize    = n => {
       if (isStartNode(n) || isEndNode(n)) return { w: SE_SIZE, h: SE_SIZE };
+      if (isBarNode(n))                    return { w: 10, h: 80 };
       if (n.data.isDecision)               return { w: GW_SIZE, h: GW_SIZE };
       return { w: NODE_W, h: NODE_H };
     };
@@ -1840,6 +1885,9 @@ function App() {
       } else if (isEndNode(n)) {
         idType = 'UMLSpecialState';
         panelAttrs = 'type=final';
+      } else if (isBarNode(n)) {
+        idType = 'UMLSyncBarVertical';   // UML fork / join bar
+        panelAttrs = '';
       } else if (n.data.isDecision) {
         idType = 'UMLSpecialState';
         panelAttrs = 'type=decision';
@@ -1977,9 +2025,11 @@ function App() {
       .catch(() => modalAlert('Export failed. Check the console.', 'Error'));
   };
 
-  const addNode = () => {
+  const addNode = (nodeType = 'task') => {
     const id = `new-${nextId}`; setNextId((n) => n + 1);
-    const newNode = { id, type: 'task', data: { label: makeLabel(`Step ${nextId}`, '', showActors), baseLabel: `Step ${nextId}`, actor: '', nodeType: 'task', isDecision: false }, position: { x: 0, y: 0 } };
+    const baseLabel = nodeType === 'fork' ? 'Fork' : nodeType === 'join' ? 'Join' : `Step ${nextId}`;
+    const label = nodeType === 'task' ? makeLabel(baseLabel, '', showActors) : baseLabel;
+    const newNode = { id, type: 'task', data: { label, baseLabel, actor: '', nodeType, isDecision: false }, position: { x: 0, y: 0 } };
     // The first step in an empty diagram automatically gets a process start and end
     const base = taskNodes.length
       ? { nodes: [...stripLaneProps(nodes), newNode], edges }
@@ -1990,8 +2040,11 @@ function App() {
   };
 
 
-  const editDiagramWithAI = async () => {
-    if (!copilotPrompt.trim() || nodes.filter(n => n.type !== 'swimlane').length === 0) return;
+  // instructionOverride: a prompt built elsewhere (e.g. the fix list in "Match with description") instead of the composer text
+  const editDiagramWithAI = async (instructionOverride) => {
+    const fromComposer = typeof instructionOverride !== 'string';
+    const instruction = fromComposer ? copilotPrompt : instructionOverride;
+    if (!instruction.trim() || nodes.filter(n => n.type !== 'swimlane').length === 0) return false;
     setIsCopilotLoading(true);
     try {
       const currentTasks = nodes.filter((n) => n.type !== 'swimlane');
@@ -2012,7 +2065,7 @@ function App() {
         })),
       };
 
-      const data = await editDiagramFromText(copilotPrompt, currentModel);
+      const data = await editDiagramFromText(instruction, currentModel);
       if (!data.nodes?.length) throw new Error('The AI returned no nodes');
 
       const outgoingCounts = {};
@@ -2026,7 +2079,7 @@ function App() {
           baseLabel: node.label,
           actor: node.actor || '',
           nodeType: node.type || 'task',
-          isDecision: (outgoingCounts[node.id] || 0) > 1,
+          isDecision: isDecisionOf(node.type || 'task', outgoingCounts[node.id] || 0),
           durationMinutes: node.duration_minutes ?? null,
           costEuros: node.cost_euros ?? null,
         },
@@ -2049,9 +2102,11 @@ function App() {
       saveHistory(laid, laidEdges);
       setSelectedNodeId(null); setSelectedEdgeId(null);
       showDiagramReview(serializeModel(laid.filter((n) => n.type !== 'swimlane'), laidEdges), promptText);
-      setCopilotPrompt('');
+      if (fromComposer) setCopilotPrompt('');
+      return true;
     } catch (err) {
       await modalAlert(`Editing failed: ${err.message}`, 'Error');
+      return false;
     } finally {
       setIsCopilotLoading(false);
     }
@@ -2213,7 +2268,7 @@ function App() {
               loadedEdges.forEach(e => { outgoingCounts[e.source] = (outgoingCounts[e.source] || 0) + 1; });
               const nodesWithDecision = fixedNodes.map(n => ({
                 ...n,
-                data: { ...n.data, isDecision: n.data.isDecision || (outgoingCounts[n.id] || 0) > 1 }
+                data: { ...n.data, isDecision: !isBarNode(n) && (n.data.isDecision || isDecisionOf(n.data.nodeType || 'task', outgoingCounts[n.id] || 0)) }
               }));
               setLaneCustomWidth(null);
               const normalized = withStartEnd(nodesWithDecision, loadedEdges, edgeOptions);
@@ -2229,12 +2284,15 @@ function App() {
   }
   // Start and end are added automatically: they inherit the role of the neighbouring step, have no KPIs and cannot be deleted
   const isEventSelected = isEventNode(taskNodes.find((n) => n.id === selectedNodeId));
+  const isBarSelected = isBarNode(taskNodes.find((n) => n.id === selectedNodeId));
   const managementActions = [
-    { label: 'Add node', short: 'Add', icon: Icons.Add, onClick: addNode, group: 'diagram' },
+    { label: 'Add node', short: 'Add', icon: Icons.Add, onClick: () => addNode('task'), group: 'diagram' },
+    { label: 'Add fork (split into parallel branches)', short: 'Fork', icon: Icons.Fork, onClick: () => addNode('fork'), group: 'diagram' },
+    { label: 'Add join (wait for all parallel branches)', short: 'Join', icon: Icons.Join, onClick: () => addNode('join'), group: 'diagram' },
     { label: 'Align', short: 'Align', icon: Icons.Align, onClick: onLayout, group: 'diagram' },
     { label: 'Rename node', short: 'Rename', icon: Icons.Edit, onClick: renameSelectedNode, disabled: !selectedNodeId, group: 'node' },
     { label: 'Change role', short: 'Role', icon: Icons.User, onClick: changeActorSelected, disabled: !selectedNodeId || isEventSelected, group: 'node' },
-    { label: 'Node KPIs', short: 'KPI', icon: Icons.KPI, onClick: editNodeKpi, disabled: !selectedNodeId || isEventSelected, group: 'node' },
+    { label: 'Node KPIs', short: 'KPI', icon: Icons.KPI, onClick: editNodeKpi, disabled: !selectedNodeId || isEventSelected || isBarSelected, group: 'node' },
     { label: isEventSelected ? 'The process start and end cannot be deleted' : 'Delete node', short: 'Delete', icon: Icons.Trash, onClick: deleteSelectedNode, disabled: !selectedNodeId || isEventSelected, danger: true, group: 'node' },
     { label: 'Edge text', short: 'Text', icon: Icons.Text, onClick: renameSelectedEdge, disabled: !selectedEdgeId, group: 'edge' },
     { label: 'Delete edge', short: 'Delete', icon: Icons.Trash, onClick: deleteSelectedEdge, disabled: !selectedEdgeId, danger: true, group: 'edge' },
@@ -2462,17 +2520,18 @@ function App() {
             workNodes={workNodes}
             resources={resources}
             onReloadResources={() => loadResources(currentModel, promptText, modelSignature)}
-            statsReview={statsReview}
-            isStatsReviewLoading={isStatsReviewLoading}
-            diagramReview={diagramReview}
-            isDiagramReviewLoading={isDiagramReviewLoading}
-            onRegenerateAdvice={() => { showDiagramReview(currentModel, promptText); showStatsReview(currentModel, promptText); }}
+            advice={advice}
+            onReloadAdvice={() => loadAdvice(currentModel, promptText, modelSignature)}
             accuracy={diagramAccuracy}
             isAccuracyLoading={isDiagramAccuracyLoading}
             accuracyError={diagramAccuracyError}
             isAccuracyStale={isAccuracyStale}
             onRecheckAccuracy={() => runAccuracyCheck(currentModel, promptText, structureSignature)}
+            accuracyEvaluator={accuracyEvaluator}
+            onAccuracyEvaluatorChange={(evaluator) => { setAccuracyEvaluator(evaluator); runAccuracyCheck(currentModel, promptText, structureSignature, evaluator); }}
             hasDescription={Boolean(promptText.trim())}
+            onApplyAccuracyFix={editDiagramWithAI}
+            isApplyingFix={isCopilotLoading}
           />
         </div>}
       </main>

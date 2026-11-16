@@ -10,6 +10,7 @@ import sys
 import json
 import re
 import time
+import threading
 import unicodedata
 import requests
 import jwt
@@ -160,6 +161,7 @@ class PromptReviewResponse(BaseModel):
 class DiagramAccuracyRequest(BaseModel):
     description: str = Field(..., min_length=1, max_length=12000)
     model: dict
+    evaluator: Literal["gemini", "nvidia"] = "nvidia"
 
 
 class AccuracyRequirement(BaseModel):
@@ -179,6 +181,7 @@ class DiagramAccuracyResponse(BaseModel):
     extra: List[str]
     requirements: List[AccuracyRequirement] = []
     category_scores: Dict[str, int] = {}
+    evaluator: str = ""
 
 
 class ProcessResourcesRequest(BaseModel):
@@ -204,6 +207,19 @@ class ProcessResourcesResponse(BaseModel):
     summary: str = ""
     specialists: List[SpecialistInfo] = []
     tools: List[ToolInfo] = []
+
+
+class AdviceIdea(BaseModel):
+    kind: Literal["remove", "redesign", "automate"]
+    step: str = ""      # diagram step the idea is about ("" = the whole process)
+    text: str           # what to do
+    effect: str = ""    # expected benefit
+    tool: str = ""      # automate only: the kind of system or tool that takes the step over
+
+
+class ProcessAdviceResponse(BaseModel):
+    summary: str = ""
+    ideas: List[AdviceIdea] = []
 
 
 class AssistantChatMessage(BaseModel):
@@ -455,294 +471,88 @@ def generate_diagram_from_text(description: str, min_nodes: int, max_nodes: int,
     if not GROQ_API_KEY or len(GROQ_API_KEY) < 10:
         return dummy_model("Set GROQ_API_KEY in .env")
 
-    kpi_instruction = """6. Every node of type task MUST contain the fields:
-       - duration_minutes (integer, estimated time in MINUTES)
-         Examples: 30 = 30 minutes, 480 = 1 working day, 2400 = 1 week, 10080 = 1 month
-       - cost_euros (decimal number, estimated cost in EUR)""" if include_kpi else ""
+    kpi_instruction = """
+- Every "task" node also has "duration_minutes" (integer, estimated time in minutes; 480 = 1 working day)
+  and "cost_euros" (number, estimated cost in EUR).""" if include_kpi else ""
 
-    # The model first lists every activity from the description ("activities") and each step states which
-    # of them it covers ("covers"). The backend then verifies that no activity was lost (see _coverage_problems).
-    prompt = f"""
-Create a JSON model of a business process. Your ONLY task is to return syntactically correct, valid JSON and ABSOLUTELY NO OTHER TEXT.
-
-Structure you must follow strictly:
+    prompt = f"""Turn the process description below into a business process diagram. Return ONLY a JSON object:
 {{
-  "roles": [
-    {{"name": "Role", "source": "the role exactly as written in the description"}}
-  ],
-  "activities": [
-    {{"n": 1, "text": "Activity from the description", "actor": "Role"}},
-    {{"n": 2, "text": "Next activity", "actor": "Role"}}
-  ],
   "nodes": [
     {{"id": "start", "type": "startEvent", "label": "Triggering event"}},
-    {{"id": "t1", "type": "task", "label": "Task name", "actor": "Role", "covers": [1]}},
-    {{"id": "gw1", "type": "gateway", "label": "Decision?", "actor": "Role"}},
-    {{"id": "t2", "type": "task", "label": "Task name", "actor": "Role", "covers": [2]}},
-    {{"id": "end", "type": "endEvent", "label": "Expected outcome"}}
+    {{"id": "t1", "type": "task", "label": "Activity", "actor": "Role"}},
+    {{"id": "gw1", "type": "gateway", "label": "Question?", "actor": "Role"}},
+    {{"id": "f1", "type": "fork", "label": "Fork", "actor": "Role"}},
+    {{"id": "j1", "type": "join", "label": "Join", "actor": "Role"}},
+    {{"id": "end", "type": "endEvent", "label": "Outcome"}}
   ],
   "edges": [
     {{"id": "e1", "source": "start", "target": "t1"}},
-    {{"id": "e2", "source": "t1", "target": "gw1"}},
-    {{"id": "e3", "source": "gw1", "target": "t2", "label": "Yes"}},
-    {{"id": "e4", "source": "gw1", "target": "t1", "label": "No"}},
-    {{"id": "e5", "source": "t2", "target": "end"}}
+    {{"id": "e2", "source": "gw1", "target": "t1", "label": "No"}}
   ]
 }}
 
-PROCEDURE – the description usually has two parts:
-  - a SHORT OVERVIEW of the process in the user's own words: use it as context (what the process is about, what starts it, what its result is,
-    which roles take part), but do NOT turn overview sentences into extra steps;
-  - a STEP-BY-STEP DESCRIPTION (usually a numbered list): these are the activities – each numbered item is normally one activity, in that order.
-  While reading, look for: (1) the event that triggers the process, (2) the main activities and tasks, (3) the responsible roles,
-  (4) the resources and documents used, (5) the expected outcome.
-0. In "roles", list every role/actor stated in the description: "name" = the role in English, "source" = the same role copied
-   word for word from the description (in its original language and form). Every "actor" below must be one of these English names.
-A. In "activities", list ALL activities from the description in the order in which they happen. Each activity separately – even when one sentence
-   contains several (e.g. "cuts the wood, glues and sands the board" = 3 activities). Do not omit anything.
-   NEVER INVENT activities: every activity must be an action that a sentence of the description explicitly states (its verb is in the text).
-   Do not split an action into preparation sub-steps the text does not name (e.g. "submits a request" is ONE activity, not "creates" + "submits").
-   An explicit decision made by a role ("the manager approves or rejects the request") is an activity.
-   A mere CONDITION ("if the goods are in stock…", "if approved…", "otherwise…") is NOT an activity – it becomes a gateway (see B).
-   Do not add a "check whether …" activity for a condition unless the description explicitly says that someone checks it.
-   Resources and documents (forms, invoices, systems, tools) are NOT activities on their own – mention them in the name of the activity
-   that uses or produces them (e.g. "Fill in the order form"). The triggering event and the expected outcome are NOT activities either.
-B. Then create the nodes. EVERY activity from "activities" must be covered by a node of type "task" (field "covers" = the activity numbers "n"),
-   and there must be NO task node that does not cover an activity.
-   - If, according to the description, someone actively decides ("the manager approves or rejects"), that is a "task" (the decision-making) followed by a "gateway" with branches.
-   - If it is only a condition ("if the goods are in stock…"), put a "gateway" directly after the preceding activity – DO NOT ADD any extra "check" or "decision" task.
-   - The gateway "label" is a concrete question taken from the context (e.g. "Are the goods in stock?"), never just "Decision?".
-C. The user's step range is {min_nodes} to {max_nodes} task nodes. The MAXIMUM is binding, the MINIMUM is only a guide:
-   - If there are more activities than {max_nodes}, merge activities performed by THE SAME role directly one after another (the node name must contain both, e.g. "Prepare and publish the job ad").
-     Never drop an activity, even when merging. NEVER merge activities of different roles – each node has exactly one role (no "Lawyer/IT").
-     Only if {max_nodes} cannot be met without merging different roles, exceed the maximum by as few nodes as possible.
-   - If there are fewer activities than {min_nodes}, simply create fewer task nodes – one per activity. NEVER split, pad or add steps
-     to reach the minimum. A faithful diagram with fewer steps is always better than an invented step.
-
-ACCURACY (most important):
-- The diagram must faithfully match the description: the same activities, the same order, the same decision conditions. Add nothing, remove nothing.
-- LANGUAGE: write ALL "label", "text" and "actor" values (steps, gateway questions, branch conditions, roles) in ENGLISH,
-  even when the description is written in another language (e.g. Slovak) – translate them faithfully. Only "roles[].source" keeps the original wording.
-- Phrase step names from the description (the same verb and object, translated to English if needed), briefly, as an activity name starting with a capital
-  letter (e.g. "Check product availability", "Ship goods to the customer"). Do not change their meaning.
-- "actor" may ONLY be a role that is explicitly stated in the description (or unambiguously follows from the sentence, e.g. the subject of the previous sentence).
-  NEVER invent new roles or departments. If the description does not say who performs an activity, set "actor": null.
-- A gateway has the role of whoever decides according to the description; if the description does not say, "actor": null.
-- Decision branches follow the description. If the description does not say what happens in a branch, determine its target logically from the process context
-  among the existing steps – do NOT connect it to the end node automatically:
-  - a failed check or a rejection that can be fixed (e.g. "Is the document complete?" → No) → go back to the step that prepares or corrects it (a loop),
-  - a condition under which part of the process is simply skipped (e.g. "Is approval needed?" → No) → continue to the first step after the skipped part,
-  - to the end node only if this branch logically ends the process (e.g. final rejection, order cancellation).
-  Do not invent new steps here either – connect the branch only to steps that already exist in the diagram.
-- START and END: the startEvent "label" is the triggering event from the description, briefly (e.g. "Invoice received"); the endEvent "label"
-  is the expected outcome (e.g. "Invoice paid"). If the description does not state them, use "Process start" / "Process end".
-  If a branch ends the process with a different result (e.g. rejection), it still goes to the same end node; the edge label states the result.
-- Lines starting with "Clarification:" are the user's answers to questions – they take precedence over the rest of the text.
-
-RULES:
-1. It MUST be a JSON object only.
-2. Every node of type "gateway" MUST have at least 2 outgoing edges.
-3. EVERY edge leaving a "gateway" node MUST have a "label" with a concrete condition that fits the process context (e.g. "Yes"/"No", "Approved"/"Rejected"). Never use generic "Option 1" / "Option 2".
-4. Edges between ordinary "task" nodes do not need a label. Keep the order of activities from the description.
-5. The last element of a list (nodes, edges) MUST NOT be followed by a comma!
-{kpi_instruction}
+Rules:
+- Do NOT invent anything. Every task is an activity the description explicitly states, in the same order. No extra
+  "check", "prepare", "approve", "resubmit" or similar steps the text does not name. Do not invent roles either –
+  "actor" is a role named in the description, otherwise null.
+- Before building the diagram, analyse where the process BRANCHES and where it LOOPS:
+  - branch (gateway): the description states a decision or condition ("if …", "otherwise", "approves or rejects");
+  - loop: the description says work is repeated ("again", "until", "returns it", "if not OK, fixes it") – the gateway
+    branch goes BACK to the existing earlier step; "does X again" is the loop itself, not a new step.
+  - parallel flow (UML fork/join): the description says activities happen at the same time ("at the same time",
+    "in parallel", "simultaneously", "meanwhile", "while X does A, Y does B", "both … and … before …") – a "fork"
+    node splits the flow into the parallel branches (no edge labels, no conditions), and a "join" node waits until
+    ALL branches are finished before the process continues. Every fork has a matching join.
+  Add a gateway only where the description needs one. A process without decisions is a straight line.
+  A gateway is an either/or choice; a fork means ALL branches are done. Never use a gateway for parallel work.
+- Every gateway has at least 2 outgoing edges, each with a concrete label ("Yes"/"No", "Approved"/"Rejected").
+- Every fork has exactly 1 incoming and at least 2 outgoing edges; every join has at least 2 incoming and exactly
+  1 outgoing edge. Fork/join labels are "Fork"/"Join", their actor is the role of the neighbouring step, no KPIs.
+- Use {min_nodes} to {max_nodes} task nodes as a guide; never add steps just to reach the minimum.
+- Write all labels and roles in English, even if the description is in another language.
+- startEvent label = what triggers the process, endEvent label = the outcome. Every activity of the description
+  (including the first one) is a task – do not hide activities in the start or end event.{kpi_instruction}
 
 Process description:
 {description}
 """
 
     try:
-        resp = groq_post(
-            GROQ_URL,
-            headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-            json={
-                "model": GROQ_MODEL,
-                "messages": [
-                    {"role": "system", "content": "You are a JSON generator. You output only valid JSON."},
-                    {"role": "user", "content": prompt}
-                ],
-                "max_completion_tokens": 8192,
-                "temperature": 0.0,
-                "response_format": {"type": "json_object"},
-                "reasoning_format": "hidden",
-            },
-            timeout=90,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        diagram = groq_json("You are a JSON generator. You output only valid JSON.", prompt, max_tokens=8192)
+        def as_list(value):
+            # The model sometimes returns {"t1": {...}, ...} instead of a list
+            return list(value.values()) if isinstance(value, dict) else value if isinstance(value, list) else []
 
-        choices = data.get("choices", [])
-        if not choices:
-            raise ValueError("Groq returned no choices")
+        def first_set(n, *keys):
+            return next((n[k] for k in keys if n.get(k) is not None), None)
 
-        first = choices[0]
-        if isinstance(first, dict):
-            message = first.get("message", {})
-            content = message.get("content", "") if isinstance(message, dict) else str(message)
-        else:
-            content = str(first)
-
-        content = content.strip()
-
-        if content.startswith("```"):
-            lines = content.split('\n')
-            if lines and lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].startswith("```"):
-                lines = lines[:-1]
-            content = '\n'.join(lines).strip()
-
-        try:
-            diagram = json.loads(content)
-        except json.JSONDecodeError as e:
-            start_idx = content.find('{')
-            end_idx = content.rfind('}') + 1
-            if start_idx != -1 and end_idx != 0 and start_idx < end_idx:
-                content = content[start_idx:end_idx]
-                diagram = json.loads(content)
-            else:
-                raise e
-
-        if isinstance(diagram, list):
-            if len(diagram) > 0 and isinstance(diagram[0], dict):
-                diagram = diagram[0]
-            else:
-                raise ValueError("AI returned a list instead of a JSON object")
-
-        if not isinstance(diagram, dict):
-            raise ValueError(f"Unexpected response type: {type(diagram)}")
-
-        nodes = []
         node_ids = set()
-        raw_nodes = diagram.get("nodes", [])
-        if not isinstance(raw_nodes, list):
-            raw_nodes = list(raw_nodes.values()) if isinstance(raw_nodes, dict) else []
-
-        for n in raw_nodes:
-            if not isinstance(n, dict): continue
+        nodes = []
+        for n in as_list(diagram.get("nodes")):
+            if not isinstance(n, dict):
+                continue
             node_id = str(n.get("id", f"node_{len(nodes)}"))
             nodes.append(Node(
                 id=node_id,
                 type=str(n.get("type", "task")),
                 label=str(n.get("label", "Unknown task")),
                 actor=n.get("actor"),
-                duration_minutes=n.get("durationminutes") or n.get("duration_minutes"),
-                cost_euros=n.get("costeuros") or n.get("cost_euros"),
+                duration_minutes=first_set(n, "duration_minutes", "durationminutes"),
+                cost_euros=first_set(n, "cost_euros", "costeuros"),
             ))
             node_ids.add(node_id)
-
-        edges = []
-        raw_edges = diagram.get("edges", [])
-        if not isinstance(raw_edges, list):
-            raw_edges = list(raw_edges.values()) if isinstance(raw_edges, dict) else []
-
-        for e in raw_edges:
-            if not isinstance(e, dict): continue
-            source = str(e.get("source", ""))
-            target = str(e.get("target", ""))
-            if source in node_ids and target in node_ids:
-                edges.append(Edge(
-                    id=str(e.get("id", f"edge_{len(edges)}")),
-                    source=source,
-                    target=target,
-                    label=e.get("label")
-                ))
-
-        model = ProcessModel(nodes=nodes, edges=edges)
-        missing, multi_role = _coverage_problems(diagram, raw_nodes)
-        if missing or multi_role:
-            # One repair attempt through the diagram editor; if it fails, the original model is returned
-            print(f"🔁 Repairing diagram: {len(missing)} activities missing, {len(multi_role)} nodes with several roles")
-            instruction = _repair_instruction(diagram, missing, multi_role, include_kpi)
-            current = model.model_dump() if hasattr(model, "model_dump") else model.dict()
-            repaired = edit_diagram_with_ai(instruction, current)
-            if not any(n.label == AI_ERROR_LABEL for n in repaired.nodes) and len(repaired.nodes) >= len(model.nodes):
-                model = repaired
-        return _ground_actors(model, description, _role_sources(diagram))
-
+        if not nodes:
+            raise ValueError("the AI returned no usable nodes")
+        edges = [
+            Edge(id=str(e.get("id", f"edge_{i}")), source=str(e.get("source")), target=str(e.get("target")), label=e.get("label"))
+            for i, e in enumerate(as_list(diagram.get("edges")))
+            if isinstance(e, dict) and str(e.get("source")) in node_ids and str(e.get("target")) in node_ids
+        ]
+        return ProcessModel(nodes=nodes, edges=edges)
     except Exception as exc:
-        print(f"💥 ERROR: {exc}")
-        return dummy_model(f"Error: {str(exc)[:40]}")
-
-
-def _actor_in_text(actor: str, text_ascii: str) -> bool:
-    """A role is in the description if the start (5 characters) of each of its words occurs in the text – this tolerates inflection."""
-    words = [w for w in re.findall(r"[a-z0-9]+", _ascii(actor)) if len(w) >= 2]
-    return bool(words) and all(re.search(r"\b" + re.escape(w[:5]), text_ascii) for w in words)
-
-
-def _role_sources(diagram: dict) -> Dict[str, str]:
-    """English role name → the role's original wording in the description (from the "roles" list)."""
-    sources = {}
-    for role in diagram.get("roles") or []:
-        if isinstance(role, dict) and str(role.get("name") or "").strip() and str(role.get("source") or "").strip():
-            sources[_ascii(role["name"])] = str(role["source"])
-    return sources
-
-
-def _ground_actors(model: ProcessModel, description: str, role_sources: Optional[Dict[str, str]] = None) -> ProcessModel:
-    """The AI must not invent roles: a role missing from the description is removed (the step goes to the "No role" lane).
-    Roles are written in English, so a translated role is checked through its original wording from the description."""
-    text_ascii = _ascii(description)
-    role_sources = role_sources or {}
-
-    def grounded(actor: str) -> bool:
-        source = role_sources.get(_ascii(actor))
-        return _actor_in_text(actor, text_ascii) or bool(source and _actor_in_text(source, text_ascii))
-
-    invented = sorted({n.actor for n in model.nodes if n.actor and not grounded(n.actor)})
-    if invented:
-        print(f"🧹 Removed invented roles: {', '.join(invented)}")
-    nodes = [n.copy(update={"actor": None}) if n.actor in invented else n for n in model.nodes]
-    return ProcessModel(nodes=nodes, edges=model.edges)
-
-
-def _coverage_problems(diagram: dict, raw_nodes: list):
-    """Activities from the description that no step covers, and steps merged across several roles."""
-    activities = [a for a in (diagram.get("activities") or []) if isinstance(a, dict) and str(a.get("text", "")).strip()]
-    tasks = [n for n in raw_nodes if isinstance(n, dict) and n.get("type", "task") == "task"]
-    covered = set()
-    reporting = 0
-    for n in tasks:
-        values = n.get("covers") if isinstance(n.get("covers"), list) else []
-        reporting += bool(values)
-        for value in values:
-            try:
-                covered.add(int(value))
-            except (TypeError, ValueError):
-                pass
-    missing = []
-    # Without reliable "covers" (at least half of the steps) coverage cannot be judged – better not to add anything
-    if activities and tasks and reporting * 2 >= len(tasks):
-        for index, activity in enumerate(activities, start=1):
-            try:
-                number = int(activity.get("n", index))
-            except (TypeError, ValueError):
-                number = index
-            if number not in covered:
-                missing.append(activity)
-    multi_role = [n for n in tasks if re.search(r"[/,;]", str(n.get("actor") or ""))]
-    return missing, multi_role
-
-
-def _repair_instruction(diagram: dict, missing: list, multi_role: list, include_kpi: bool) -> str:
-    activities = [a for a in (diagram.get("activities") or []) if isinstance(a, dict)]
-    order = "\n".join(f'{a.get("n", i)}. {a.get("text")} (role: {a.get("actor") or "not stated"})'
-                      for i, a in enumerate(activities, start=1))
-    parts = []
-    if missing:
-        listed = "\n".join(f'- "{a.get("text")}" (role: {a.get("actor") or "not stated"})' for a in missing)
-        parts.append("The diagram does not cover these activities from the description. Add EACH of them as a separate step (task) with the given role "
-                     "and place it at the correct position in the flow according to the order in the description (connect it to both the previous and the next step):\n"
-                     + listed)
-    if multi_role:
-        listed = "\n".join(f'- "{n.get("label")}" (roles: {n.get("actor")})' for n in multi_role)
-        parts.append("These steps have several roles at once. Split each of them into separate consecutive steps, one per role, "
-                     "and keep their connections in the flow:\n" + listed)
-    if include_kpi:
-        parts.append("Estimate both duration_minutes and cost_euros for every new step.")
-    parts.append("Keep all other steps, decisions and connections. The order of activities in the description is:\n" + order)
-    return "\n\n".join(parts)
+        detail = getattr(exc, "detail", None) or str(exc)
+        print(f"💥 ERROR: {detail}")
+        return dummy_model(f"Error: {str(detail)[:80]}")
 
 
 AI_ERROR_LABEL = "AI error"
@@ -858,7 +668,156 @@ def groq_json(system_prompt: str, user_prompt: str, max_tokens: int = 2000, temp
         raise HTTPException(status_code=502, detail=f"Groq returned an invalid response: {str(exc)[:200]}") from exc
 
 
+# ─── GEMINI (independent evaluator) ───────────────────────────
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip()
+GEMINI_FALLBACK_MODELS = [m.strip() for m in os.getenv("GEMINI_FALLBACK_MODELS", "gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite").split(",") if m.strip()]
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+GEMINI_COOLDOWN_SECONDS = 300
+_gemini_overloaded_until: Dict[str, float] = {}
+# Per thread: FastAPI runs each sync request in its own worker thread, so concurrent requests do not overwrite each other's model name
+_gemini_last_model = threading.local()
+
+
+def _gemini_post(payload: dict) -> requests.Response:
+    """Tries GEMINI_MODEL, then the fallback models. A model that is overloaded (429/5xx) or times out
+    is skipped for a few minutes so the next request does not wait for it again."""
+    models = list(dict.fromkeys([GEMINI_MODEL] + GEMINI_FALLBACK_MODELS))
+    ready = [m for m in models if _gemini_overloaded_until.get(m, 0) <= time.time()] or models[-1:]
+    last_error: Optional[Exception] = None
+    for model in ready:
+        try:
+            response = requests.post(GEMINI_URL.format(model=model),
+                                     headers={"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"},
+                                     json=payload, timeout=(10, 45 if model != ready[-1] else 120))
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
+            last_error = exc
+        else:
+            if response.status_code not in (404, 429) and response.status_code < 500:
+                _gemini_last_model.name = model
+                return response
+            last_error = requests.exceptions.HTTPError(response=response)
+        print(f"⚠️ Gemini {model} unavailable, trying the next model")
+        _gemini_overloaded_until[model] = time.time() + GEMINI_COOLDOWN_SECONDS
+    raise last_error
+
+
+def gemini_generate(system_prompt: str, user_prompt: str, max_tokens: int = 3000, as_json: bool = True):
+    """Calls Gemini and returns the parsed JSON object (as_json=True) or plain text."""
+    if not GEMINI_API_KEY:
+        raise HTTPException(status_code=503, detail="Set GEMINI_API_KEY in .env.")
+    config = {"temperature": 0.0, "maxOutputTokens": max_tokens}
+    if as_json:
+        config["responseMimeType"] = "application/json"
+    payload = {
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
+        "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
+        "generationConfig": config,
+    }
+    try:
+        response = _gemini_post(payload)
+        response.raise_for_status()
+        candidates = response.json().get("candidates") or []
+        parts = (candidates[0].get("content") or {}).get("parts") or [] if candidates else []
+        text = "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
+        if not text:
+            raise ValueError("Gemini returned no response")
+        if not as_json:
+            return text
+        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text)
+        result = json.loads(text)
+        if not isinstance(result, dict):
+            raise ValueError("Gemini did not return a JSON object")
+        return result
+    except requests.exceptions.RequestException as exc:
+        if exc.response is not None and exc.response.status_code == 429:
+            raise HTTPException(status_code=429, detail="Gemini API rate limit. Try again in a moment.") from exc
+        detail = exc.response.text[:400] if exc.response is not None else str(exc)[:160]
+        raise HTTPException(status_code=503, detail=f"Gemini API is unavailable: {detail}") from exc
+    except (ValueError, TypeError, AttributeError, IndexError) as exc:
+        raise HTTPException(status_code=502, detail=f"Gemini returned an invalid response: {str(exc)[:200]}") from exc
+
+
+# ─── NVIDIA (second independent evaluator, OpenAI-compatible API) ───
+NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "").strip()
+NVIDIA_MODEL = os.getenv("NVIDIA_MODEL", "nvidia/nemotron-3-ultra-550b-a55b").strip()
+NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
+
+
+def _parse_json_object(text: str) -> dict:
+    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
+    try:
+        result = json.loads(text)
+    except json.JSONDecodeError:
+        start, end = text.find("{"), text.rfind("}")
+        if start == -1 or end <= start:
+            raise ValueError("no JSON object in the response")
+        result = json.loads(text[start:end + 1])
+    if not isinstance(result, dict):
+        raise ValueError("the response is not a JSON object")
+    return result
+
+
+def nvidia_generate(system_prompt: str, user_prompt: str, max_tokens: int = 3000, as_json: bool = True):
+    """Calls the NVIDIA API and returns the parsed JSON object (as_json=True) or plain text."""
+    if not NVIDIA_API_KEY:
+        raise HTTPException(status_code=503, detail="Set NVIDIA_API_KEY in .env.")
+    payload = {
+        "model": NVIDIA_MODEL,
+        "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+        "temperature": 0.0,
+        "max_tokens": max_tokens,
+    }
+    try:
+        response = requests.post(NVIDIA_URL, json=payload, timeout=(10, 180),
+                                 headers={"Authorization": f"Bearer {NVIDIA_API_KEY}", "Content-Type": "application/json"})
+        response.raise_for_status()
+        choices = response.json().get("choices") or []
+        text = str(((choices[0].get("message") or {}).get("content") if choices else "") or "")
+        # Remove the reasoning, also when the answer was cut off before </think> or the opening <think> is missing
+        text = re.sub(r"<think>.*?(?:</think>|$)", "", text, flags=re.S)
+        text = text.split("</think>")[-1].strip()
+        if not text:
+            raise ValueError("NVIDIA returned no answer (it may have been cut off while reasoning)")
+        return _parse_json_object(text) if as_json else text
+    except requests.exceptions.RequestException as exc:
+        if exc.response is not None and exc.response.status_code == 429:
+            raise HTTPException(status_code=429, detail="NVIDIA API rate limit. Try again in a moment.") from exc
+        detail = exc.response.text[:400] if exc.response is not None else str(exc)[:160]
+        raise HTTPException(status_code=503, detail=f"NVIDIA API is unavailable: {detail}") from exc
+    except (ValueError, TypeError, AttributeError, IndexError) as exc:
+        raise HTTPException(status_code=502, detail=f"NVIDIA returned an invalid response: {str(exc)[:200]}") from exc
+
+
+EVALUATORS = {"gemini": gemini_generate, "nvidia": nvidia_generate}
+
+
+def diagram_to_text(model: dict, outline: str, evaluator: str = "gemini") -> str:
+    """The evaluator reads the diagram (without seeing the original description) and writes it back as a plain process description."""
+    compact = {
+        "nodes": [{k: n.get(k) for k in ("id", "type", "label", "actor") if n.get(k) is not None}
+                  for n in (model.get("nodes") or []) if isinstance(n, dict)],
+        "edges": [{k: e.get(k) for k in ("source", "target", "label") if e.get(k) is not None}
+                  for e in (model.get("edges") or []) if isinstance(e, dict)],
+    }
+    prompt = f"""Below is a business process diagram (BPMN-like JSON) and an outline of its flow.
+Write the process description that this diagram represents, as a person would describe the process in prose:
+who does what, in which order, which decisions are made and with which conditions each branch continues, and how the process ends.
+Describe ONLY what is in the diagram. Do not add, guess or improve anything. Write in English, plain text, no headings or lists.
+
+DIAGRAM JSON:
+{json.dumps(compact, ensure_ascii=False)}
+
+FLOW OUTLINE:
+{outline}
+"""
+    return EVALUATORS[evaluator]("You translate process diagrams into faithful plain-text process descriptions.",
+                                 prompt, max_tokens=2000, as_json=False)
+
+
 EVENT_NODE_TYPES = {"startEvent", "endEvent"}
+PARALLEL_NODE_TYPES = {"fork", "join"}  # UML fork / join nodes (BPMN parallel gateway)
+CONTROL_NODE_TYPES = EVENT_NODE_TYPES | PARALLEL_NODE_TYPES
 
 
 def describe_process_model(model: dict) -> str:
@@ -888,7 +847,7 @@ def describe_process_model(model: dict) -> str:
 
     numbers = {}
     for nid in order:
-        if by_id[nid].get("type") not in EVENT_NODE_TYPES:
+        if by_id[nid].get("type") not in CONTROL_NODE_TYPES:
             numbers[nid] = len(numbers) + 1
 
     def name(nid: str) -> str:
@@ -897,6 +856,10 @@ def describe_process_model(model: dict) -> str:
             return "START"
         if node_type == "endEvent":
             return "END"
+        if node_type == "fork":
+            return "PARALLEL SPLIT"
+        if node_type == "join":
+            return "PARALLEL JOIN (waits for all branches)"
         return f'step {numbers[nid]} "{by_id[nid].get("label", "")}"'
 
     lines = []
@@ -907,6 +870,10 @@ def describe_process_model(model: dict) -> str:
             continue
         if node_type == "startEvent":
             head = "START"
+        elif node_type == "fork":
+            head = "PARALLEL SPLIT (all branches run at the same time)"
+        elif node_type == "join":
+            head = "PARALLEL JOIN (waits for all branches)"
         else:
             kind = "Decision" if node_type == "gateway" or len(outgoing[nid]) > 1 else "Step"
             head = f'{kind} {numbers[nid]}: "{node.get("label", "")}" (role: {node.get("actor") or "not stated"})'
@@ -925,8 +892,14 @@ ACCURACY_CATEGORIES = {"step", "actor", "decision", "order", "outcome"}
 
 @app.post("/evaluate-model", response_model=DiagramAccuracyResponse)
 def evaluate_generated_model(input: DiagramAccuracyRequest) -> DiagramAccuracyResponse:
-    """Splits the description into requirements, the AI judges each one separately and the score is computed deterministically."""
-    diagram_text = describe_process_model(input.model)
+    """An independent model (Gemini or NVIDIA, not the generator) first translates the diagram back into text
+    without seeing the original description, then splits the original into requirements and judges each against that text.
+    The score is computed deterministically. Gemini without GEMINI_API_KEY falls back to Groq and the outline."""
+    outline = describe_process_model(input.model)
+    evaluator = input.evaluator
+    if evaluator == "gemini" and not GEMINI_API_KEY:
+        evaluator = "groq"
+    diagram_text = outline if evaluator == "groq" else diagram_to_text(input.model, outline, evaluator)
     evaluation_prompt = f"""You compare the user's ORIGINAL DESCRIPTION with the CONTENT OF A PROCESS DIAGRAM.
 
 Procedure:
@@ -957,11 +930,14 @@ Respond in English and return only JSON:
 ORIGINAL DESCRIPTION:
 {input.description}
 
-DIAGRAM (steps in flow order):
+DIAGRAM (described as text):
 {diagram_text}
 """
-    result = groq_json("You evaluate process diagrams against requirements and return only valid JSON.",
-                       evaluation_prompt, max_tokens=3000)
+    judge_system = "You evaluate process diagrams against requirements and return only valid JSON."
+    if evaluator == "groq":
+        result = groq_json(judge_system, evaluation_prompt, max_tokens=3000)
+    else:
+        result = EVALUATORS[evaluator](judge_system, evaluation_prompt, max_tokens=8000)
 
     requirements = []
     for raw in result.get("requirements") or []:
@@ -1001,6 +977,7 @@ DIAGRAM (steps in flow order):
         extra=[str(x).strip() for x in (result.get("extra") or []) if str(x).strip()][:5],
         requirements=requirements,
         category_scores=category_scores,
+        evaluator={"gemini": f"Gemini ({getattr(_gemini_last_model, 'name', GEMINI_MODEL)})", "nvidia": f"NVIDIA ({NVIDIA_MODEL})", "groq": f"Groq ({GROQ_MODEL})"}[evaluator],
     )
 
 
@@ -1012,7 +989,7 @@ def process_resources(input: ProcessResourcesRequest) -> ProcessResourcesRespons
     """Estimate of the specialists and machines/tools the process steps need."""
     diagram_text = describe_process_model(input.model)
     roles = sorted({str(n.get("actor")).strip() for n in (input.model.get("nodes") or [])
-                    if isinstance(n, dict) and n.get("actor") and n.get("type") not in EVENT_NODE_TYPES})
+                    if isinstance(n, dict) and n.get("actor") and n.get("type") not in CONTROL_NODE_TYPES})
     resources_prompt = f"""Analyse the business process and determine the resources it needs.
 
 1. specialists: for EACH role in the diagram ({", ".join(roles) or "roles are not stated – derive them from the steps"}) provide:
@@ -1055,6 +1032,71 @@ DIAGRAM (steps in flow order):
                               steps=str_list(t.get("steps"))))
     return ProcessResourcesResponse(summary=str(result.get("summary") or "").strip(),
                                     specialists=specialists, tools=tools[:12])
+
+
+ADVICE_KINDS = ("remove", "redesign", "automate")
+ADVICE_PER_KIND = 3
+
+
+@app.post("/process-advice", response_model=ProcessAdviceResponse)
+def process_advice(input: ProcessResourcesRequest) -> ProcessAdviceResponse:
+    """Improvement ideas for the process: what to remove, what to redesign and what to automate."""
+    diagram_text = describe_process_model(input.model)
+    task_nodes = [n for n in (input.model.get("nodes") or [])
+                  if isinstance(n, dict) and n.get("type") not in CONTROL_NODE_TYPES and str(n.get("label") or "").strip()]
+    kpi_lines = [f'- "{n["label"]}": ' + ", ".join(
+                     part for part in (f'{n["duration_minutes"]} min' if n.get("duration_minutes") is not None else "",
+                                       f'{n["cost_euros"]} EUR' if n.get("cost_euros") is not None else "") if part)
+                 for n in task_nodes if n.get("duration_minutes") is not None or n.get("cost_euros") is not None]
+    advice_prompt = f"""You are a business process improvement consultant. Help the owner of this process make it faster,
+cheaper and less error-prone. Give concrete, practical ideas in three groups:
+
+- "remove": steps that add no value and can be dropped – duplicate checks, needless hand-offs between roles,
+  waiting, re-entering the same data, approvals that are not really needed.
+- "redesign": steps to change – merge steps, run independent steps in parallel, change the order, give a step
+  to a better-suited role, add a missing check that prevents rework later.
+- "automate": steps a system can do instead of a person. Name the kind of tool in "tool" (e.g. "OCR + ERP rules",
+  "CRM e-mail template", "online form with validation", "e-signature", "RPA bot", "scheduled report").
+
+Rules:
+- Each idea concerns one diagram step: "step" is its name EXACTLY as in the diagram ("" only for an idea about
+  the whole process). Do not invent steps that are not in the diagram.
+- "text": what to do, 1 sentence, specific to this process (no generic advice like "use software").
+- "effect": the expected benefit, short. Use numbers only from the KPIs below (e.g. "saves about 2 h of the 6 h
+  total"); without KPIs describe the benefit in words ("faster", "fewer errors"). Never invent numbers.
+- At most {ADVICE_PER_KIND} ideas per group, only ideas that really make sense; a group may be empty.
+  Prefer ideas with the biggest impact. Do not repeat the same idea in two groups.
+- "summary": 1 sentence – where the biggest improvement potential of this process is.
+
+Respond in English and return only JSON:
+{{"summary": "...", "ideas": [{{"kind": "automate", "step": "...", "text": "...", "effect": "...", "tool": "..."}}]}}
+
+PROCESS DESCRIPTION:
+{input.description or "(not provided)"}
+
+DIAGRAM (steps in flow order):
+{diagram_text}
+
+STEP KPIs (duration, cost):
+{chr(10).join(kpi_lines) or "(no KPIs filled in)"}
+"""
+    result = groq_json("You are a business process improvement consultant and return only valid JSON.", advice_prompt,
+                       max_tokens=2600, temperature=0.3, reasoning_effort="low")
+
+    labels = {_ascii(n["label"]): str(n["label"]).strip() for n in task_nodes}
+    ideas, per_kind = [], {kind: 0 for kind in ADVICE_KINDS}
+    for raw in result.get("ideas") or []:
+        if not isinstance(raw, dict):
+            continue
+        kind, text = _ascii(raw.get("kind")), str(raw.get("text") or "").strip()
+        if kind not in per_kind or not text or per_kind[kind] >= ADVICE_PER_KIND:
+            continue
+        step = str(raw.get("step") or "").strip()
+        step = labels.get(_ascii(step), "" if not step else step)  # the diagram's own spelling where it matches
+        per_kind[kind] += 1
+        ideas.append(AdviceIdea(kind=kind, step=step, text=text, effect=str(raw.get("effect") or "").strip(),
+                                tool=str(raw.get("tool") or "").strip() if kind == "automate" else ""))
+    return ProcessAdviceResponse(summary=str(result.get("summary") or "").strip(), ideas=ideas)
 
 
 REVIEW_ASPECTS = {  # target -> (review flag, label, suggestion when missing)
@@ -1450,7 +1492,8 @@ RULES (MUST BE FOLLOWED STRICTLY):
 3. KEEP all original values: duration_minutes, cost_euros, actor – unless you change them explicitly.
 4. Add/modify/delete ONLY what the user asks for.
 5. New nodes get IDs with the prefix "n" (e.g. nt1, nt2) and new edges "ne1", "ne2", etc.
-6. Every gateway must have at least 2 outgoing edges with a filled-in label.
+6. Every gateway must have at least 2 outgoing edges with a filled-in label. For parallel work use a "fork" node
+   (1 incoming, at least 2 outgoing edges without labels) and a matching "join" node (at least 2 incoming, 1 outgoing edge).
 7. The last element of a list MUST NOT be followed by a comma!
 8. Return ONLY valid JSON without any text before or after it.
 9. Write all new and changed labels, conditions and roles in English, even if the user's request is written in another language.

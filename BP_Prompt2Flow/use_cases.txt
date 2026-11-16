@@ -1,0 +1,525 @@
+PROMPT2FLOW - USE CASES (Fully Dressed Use Case Template, A. Cockburn)
+=====================================================================
+
+Common definitions used by all use cases
+----------------------------------------
+System under design (Scope): Prompt2Flow web application (React frontend + FastAPI backend
+                             + database), treated as a black box.
+Actors:
+  - User            - primary actor; a person who models business processes (analyst,
+                      manager, student). "Registered User" = user who is signed in.
+  - AI Service      - supporting actor; external LLM (Groq API) used by the backend.
+  - Database        - supporting actor; stores users and diagrams (PostgreSQL / SQLite).
+
+Contents
+  PART A - EXISTING USE CASES (original application by T. Jakubov)
+    UC-01  Register and Sign In
+    UC-02  Generate Diagram from Text Description
+    UC-03  Edit Diagram with AI Copilot
+    UC-04  Edit Diagram Manually
+    UC-05  Validate Diagram with Linter
+    UC-06  Manage Diagrams in Catalog
+    UC-07  Export Diagram
+  PART B - ADDITIONAL USE CASES (extension by M. Nosenko)
+    UC-08  Validate and Clarify Process Description
+    UC-09  Generate Accurate Diagram (post-generation correction)
+    UC-10  Match Diagram with Requirements
+    UC-11  View Process Statistics and Analysis
+    UC-12  Consult AI Assistant about the Process
+    UC-13  Model Parallel Flow with Fork and Join Nodes
+    UC-14  Mark Initial and Final State of the Process
+
+
+=====================================================================
+PART A - EXISTING USE CASES (Jakubov)
+=====================================================================
+
+---------------------------------------------------------------------
+USE CASE 1: Register and Sign In
+---------------------------------------------------------------------
+Context of use: A user wants to obtain a personal account so that diagrams can be saved
+    in the catalog and owned by the user. Happens on first visit (registration) and on
+    every later visit (sign-in).
+Scope: Prompt2Flow web application
+Level: Subfunction
+Primary Actor: User
+Stakeholders & Interests:
+    - User: quick access to the account; password kept secret.
+    - Application owner: only authenticated users can save and own diagrams.
+Precondition: The user has opened the application in a web browser.
+Minimal Guarantees: No account is created with invalid or duplicate data; passwords are
+    stored only as bcrypt hashes; a failed attempt does not sign anybody in.
+Success Guarantees: The user account exists, the user holds a valid JWT token and the
+    application shows the user as signed in.
+Trigger: The user clicks "Sign in" / "Register".
+
+Main Success Scenario:
+    1. User opens the authentication dialog and chooses Register.
+    2. User enters username and password.
+    3. System validates the input and checks that the username is not taken.
+    4. System stores the new user with a hashed password.
+    5. System issues a JWT token and the frontend stores it.
+    6. System shows the user as signed in.
+
+Extensions:
+    1a. User already has an account: User chooses Sign in, enters credentials;
+        System verifies the password hash and continues at step 5.
+    3a. Username already exists: System shows an error; User changes the username (step 2).
+    3b. Input is empty or too short: System shows a validation message; back to step 2.
+    1a1. (Sign-in) Wrong credentials: System shows "invalid username or password";
+         User tries again.
+    *a. Token expires during work: System asks the user to sign in again.
+
+
+---------------------------------------------------------------------
+USE CASE 2: Generate Diagram from Text Description
+---------------------------------------------------------------------
+Context of use: The user has a business process in mind and wants to obtain a diagram of
+    it without drawing it by hand.
+Scope: Prompt2Flow web application
+Level: User-goal
+Primary Actor: User
+Stakeholders & Interests:
+    - User: a correct, readable diagram with swimlanes per role, produced quickly.
+    - AI Service: receives a well-formed prompt.
+Precondition: The application is open on the "Create process" tab; AI Service is reachable.
+Minimal Guarantees: The previous diagram on the canvas is not lost if generation fails;
+    the user sees an error message.
+Success Guarantees: A diagram (start/end nodes, tasks, decision gateways, edges, swimlanes)
+    is displayed on the canvas; KPI values (duration, cost) are attached to nodes if requested.
+Trigger: User clicks "Create diagram" (or presses Ctrl+Enter).
+
+Main Success Scenario:
+    1. User writes the process description in the text field.
+    2. User sets the desired step range (min - max).
+    3. User keeps / switches on "Estimate time and cost".
+    4. User starts generation.
+    5. System sends the description and parameters to the AI Service.
+    6. AI Service returns a structured process (nodes, edges, roles, KPIs).
+    7. System lays out the diagram into swimlanes (Dagre) and shows it on the canvas.
+
+Extensions:
+    1a. Description is empty: System disables generation / shows a hint.
+    3a. KPI estimation switched off: nodes are created without duration and cost.
+    5a. AI Service unavailable or times out: System shows an error, canvas unchanged.
+    6a. AI response is not valid JSON: System retries / reports an error.
+    7a. User is not satisfied: User continues with UC-03 or UC-04.
+
+
+---------------------------------------------------------------------
+USE CASE 3: Edit Diagram with AI Copilot
+---------------------------------------------------------------------
+Context of use: The user has a diagram and wants to change it by describing the change in
+    natural language instead of editing nodes manually.
+Scope: Prompt2Flow web application
+Level: User-goal
+Primary Actor: User
+Stakeholders & Interests:
+    - User: only the requested change is applied, rest of the diagram stays intact.
+Precondition: A diagram is loaded on the canvas.
+Minimal Guarantees: If the edit fails the current diagram stays unchanged; the change can
+    be reverted with Undo.
+Success Guarantees: The modified diagram is shown; the previous state is in undo history.
+Trigger: User clicks "Apply changes" on the "Manage diagram" tab.
+
+Main Success Scenario:
+    1. User switches to the "Manage diagram" tab.
+    2. User writes an instruction (e.g. "Add a manager approval step between Check and Payment").
+    3. User clicks "Apply changes".
+    4. System sends the current diagram and the instruction to the AI Service.
+    5. AI Service returns the modified diagram.
+    6. System saves the previous state to history, re-layouts and shows the new diagram.
+
+Extensions:
+    2a. Instruction is empty: the button is disabled.
+    5a. AI Service error: System shows an error, diagram unchanged.
+    6a. User does not like the result: User presses Undo (Ctrl+Z) - see UC-04.
+
+
+---------------------------------------------------------------------
+USE CASE 4: Edit Diagram Manually
+---------------------------------------------------------------------
+Context of use: The user wants to make precise changes to nodes, edges, roles or lanes.
+Scope: Prompt2Flow web application
+Level: User-goal
+Primary Actor: User
+Stakeholders & Interests:
+    - User: full control over the diagram, ability to revert mistakes.
+Precondition: A diagram is shown on the canvas.
+Minimal Guarantees: Every change is recorded in history and can be undone.
+Success Guarantees: The diagram on the canvas reflects the user's changes.
+Trigger: User uses a toolbar action or interacts with the canvas.
+
+Main Success Scenario:
+    1. User selects a node.
+    2. User renames it / changes its role, or adds a new node with "Add".
+    3. User connects nodes by dragging from the right port of one node to the left port of another.
+    4. User clicks "Align".
+    5. System re-calculates the layout and swimlanes and redraws the diagram.
+
+Extensions:
+    1a. User clicks a lane header: User renames the lane; System renames the role of all
+        nodes in that lane.
+    2a. User deletes a node or an edge: System removes it and connected edges.
+    *a. User presses Ctrl+Z / Ctrl+Y: System restores the previous / next state.
+
+
+---------------------------------------------------------------------
+USE CASE 5: Validate Diagram with Linter
+---------------------------------------------------------------------
+Context of use: The user wants to know whether the diagram is logically correct.
+Scope: Prompt2Flow web application
+Level: Subfunction
+Primary Actor: User
+Stakeholders & Interests:
+    - User: is warned about logical errors before saving or exporting the diagram.
+Precondition: A diagram is shown on the canvas.
+Minimal Guarantees: The linter never modifies the diagram.
+Success Guarantees: The user sees a list of found problems or confirmation that none exist.
+Trigger: The diagram changes (automatic check) or the user opens the linter panel.
+
+Main Success Scenario:
+    1. System analyses the graph of the current diagram.
+    2. System detects dead ends (nodes without outgoing edge except end nodes) and
+       unreachable nodes / nodes without input.
+    3. System shows the list of issues with the affected nodes.
+    4. User fixes the problems (UC-03 or UC-04).
+
+Extensions:
+    2a. No issues found: System shows that the diagram is valid.
+
+
+---------------------------------------------------------------------
+USE CASE 6: Manage Diagrams in Catalog
+---------------------------------------------------------------------
+Context of use: The user wants to store diagrams, find them later and share them.
+Scope: Prompt2Flow web application
+Level: User-goal
+Primary Actor: Registered User
+Stakeholders & Interests:
+    - Registered User: diagrams are stored persistently; private diagrams stay private.
+    - Other users: can browse and open public diagrams.
+Precondition: The user is signed in (UC-01).
+Minimal Guarantees: A user can never modify or delete another user's diagram; private
+    diagrams are not shown to others.
+Success Guarantees: The diagram is stored in the Database with name, category and
+    visibility, and can be found and reopened.
+Trigger: User clicks "Save" or opens the Catalog page.
+
+Main Success Scenario:
+    1. User clicks "Save".
+    2. User enters a name, chooses a category (HR, IT, Finance, ...) and visibility
+       (public / private).
+    3. System stores the diagram in the Database.
+    4. User opens the Catalog.
+    5. User searches by text and filters by category.
+    6. User opens a diagram; System loads it onto the canvas.
+
+Extensions:
+    1a. User is not signed in: System asks to sign in (UC-01).
+    5a. No diagram matches: System shows an empty result.
+    6a. User deletes own diagram: System asks for confirmation and removes it.
+
+
+---------------------------------------------------------------------
+USE CASE 7: Export Diagram
+---------------------------------------------------------------------
+Context of use: The user wants to use the diagram in a document or in another modelling tool.
+Scope: Prompt2Flow web application
+Level: User-goal
+Primary Actor: Registered User
+Stakeholders & Interests:
+    - User: a file compatible with the target tool (Camunda, Enterprise Architect, UMLet).
+Precondition: The diagram is saved in the catalog (UC-06).
+Minimal Guarantees: The diagram in the application is not changed by the export.
+Success Guarantees: The file in the chosen format is downloaded by the browser.
+Trigger: User clicks "Export" and chooses a format.
+
+Main Success Scenario:
+    1. User opens the export menu.
+    2. User chooses a format: PNG, JPG, BPMN 2.0 XML, UML XMI 2.1 or UXF.
+    3. System converts the diagram into the chosen format.
+    4. Browser downloads the file.
+
+Extensions:
+    1a. Diagram is not saved yet: System asks the user to save it first (UC-06).
+    3a. Conversion fails: System shows an error message.
+
+
+=====================================================================
+PART B - ADDITIONAL USE CASES (Nosenko)
+=====================================================================
+
+---------------------------------------------------------------------
+USE CASE 8: Validate and Clarify Process Description
+---------------------------------------------------------------------
+Context of use: While writing the process description the user wants immediate feedback
+    whether the description is complete enough to produce a good diagram. The description
+    consists of a short overview (1-3 sentences) and a numbered list of steps.
+Scope: Prompt2Flow web application
+Level: Subfunction (of UC-02)
+Primary Actor: User
+Stakeholders & Interests:
+    - User: knows what is missing before generating; is not overloaded with questions.
+    - Application owner: better input leads to more accurate diagrams.
+Precondition: The user is writing a description on the "Create process" tab; AI Service
+    is reachable.
+Minimal Guarantees: The user's text is never changed without the user's action; if the
+    review fails, the user can still generate the diagram.
+Success Guarantees: The user sees which parts/steps are understood, what is missing and
+    whether the number of steps fits the chosen range; chosen clarifications are appended
+    to the description.
+Trigger: The user pauses typing (debounce).
+
+Main Success Scenario:
+    1. User types the description.
+    2. System waits for a short pause and sends the text and step range to the AI Service.
+    3. AI Service checks presence of the overview and of numbered steps.
+    4. AI Service checks the five aspects: triggering event, main activities, responsible
+       roles, resources/documents, expected outcome.
+    5. AI Service evaluates every step: marks it understood or states what is missing
+       (e.g. who performs it, what happens if a condition is not met).
+    6. System checks whether the number of steps lies within the min - max range.
+    7. System shows the review result and up to three clarifying questions with answer options.
+    8. User chooses an answer.
+    9. System appends the answer to the description as a "Clarification:" line.
+    10. User continues with diagram generation (UC-02).
+
+Extensions:
+    3a. Overview or numbered steps missing: System asks the user to add the missing part.
+    6a. Too few / too many steps: System warns and recommends adding or merging steps.
+    7a. Description is complete: System shows no questions, only confirmation.
+    8a. User ignores the questions: User may still generate the diagram.
+    2a. AI Service unavailable: System hides the review and shows a warning.
+
+
+---------------------------------------------------------------------
+USE CASE 9: Generate Accurate Diagram
+---------------------------------------------------------------------
+Context of use: After the AI has produced a diagram, the system itself must ensure that the
+    diagram faithfully represents the description (no missing actions, no invented roles).
+Scope: Prompt2Flow backend
+Level: Subfunction (of UC-02)
+Primary Actor: System (on behalf of the User)
+Stakeholders & Interests:
+    - User: the diagram contains every action of the description and only the roles named in it.
+Precondition: AI Service has returned a generated diagram (UC-02, step 6).
+Minimal Guarantees: If the correction fails, the original generated diagram is returned
+    unchanged.
+Success Guarantees: The diagram contains all described actions, only roles mentioned in the
+    description, exactly one start node and at least one end node; the triggering event and
+    expected outcome are used as labels of start and end nodes.
+Trigger: The AI Service returns the generated diagram.
+
+Main Success Scenario:
+    1. System extracts the actions from the original description.
+    2. System compares them with the nodes of the generated diagram.
+    3. System adds the missing actions as nodes and connects them in correct order.
+    4. System removes roles not mentioned in the description and reassigns their nodes.
+    5. System adds start and end nodes (labelled by trigger and outcome) if missing.
+    6. System returns the corrected diagram to the frontend for layout (UC-02, step 7).
+
+Extensions:
+    2a. All actions are present: continue at step 4.
+    4a. Description mentions no roles: System keeps a single default role.
+    5a. Start/end nodes already present: System only updates their labels.
+
+
+---------------------------------------------------------------------
+USE CASE 10: Match Diagram with Requirements
+---------------------------------------------------------------------
+Context of use: The user wants to know how well the diagram covers the original description.
+Scope: Prompt2Flow web application
+Level: User-goal
+Primary Actor: User
+Stakeholders & Interests:
+    - User: objective, understandable measure of diagram quality and a list of what to fix.
+    - Thesis evaluation: measurable comparison of description and result.
+Precondition: A diagram and its original description exist.
+Minimal Guarantees: The diagram is not modified; a failure only shows an error.
+Success Guarantees: The user sees a matching percentage and a breakdown of fulfilled,
+    partially fulfilled and missing requirements.
+Trigger: Diagram generation finishes or the user opens "Match with description".
+
+Main Success Scenario:
+    1. System sends the description and the diagram to the AI Service.
+    2. AI Service splits the description into individual requirements.
+    3. AI Service evaluates each requirement as fulfilled, partially fulfilled or missing,
+       with a reference to the related diagram nodes.
+    4. System computes the matching percentage.
+    5. System shows the percentage and the breakdown.
+    6. User fixes missing requirements (UC-03 / UC-04) and re-runs the matching.
+
+Extensions:
+    1a. No description available (e.g. diagram opened from catalog without text):
+        System informs the user that matching is not possible.
+    3a. AI Service error: System shows an error message.
+
+
+---------------------------------------------------------------------
+USE CASE 11: View Process Statistics and Analysis
+---------------------------------------------------------------------
+Context of use: The user wants to understand the cost and duration of the process, the
+    required people and tools, and how to improve it.
+Scope: Prompt2Flow web application
+Level: User-goal
+Primary Actor: User
+Stakeholders & Interests:
+    - User / process owner: knows the most expensive and slowest steps and gets concrete
+      improvement ideas.
+Precondition: A diagram is shown; nodes have KPI values (duration, cost).
+Minimal Guarantees: The diagram is not modified by the analysis.
+Success Guarantees: The user sees a statistics report with total and per-step time and cost,
+    bottlenecks, required specialists and tools, and AI recommendations.
+Trigger: User opens the "Statistics" view.
+
+Main Success Scenario:
+    1. User opens the statistics view.
+    2. System computes total and per-step duration and cost from node KPIs.
+    3. System identifies the most time- and cost-intensive activities (bottlenecks).
+    4. System lists actors/specialists and resources/tools used in the process.
+    5. System sends the process (steps, roles, KPIs, description) to the AI Service for
+       improvement ideas.
+    6. System displays the "AI recommendations" chapter: a one-sentence summary of where the
+       biggest improvement potential is, the bottleneck step from the KPIs, and idea cards
+       grouped into Remove (steps without value), Redesign (merge, reorder, parallelise,
+       change role) and Automate (with the kind of tool). Each card names the step it is
+       about, what to do and the expected effect. The ideas do not change the diagram.
+
+Extensions:
+    2a. Nodes have no KPI values: System asks the AI Service to estimate them first, or
+        informs the user that KPI estimation is needed.
+    5a. AI Service unavailable: System shows the computed statistics without recommendations
+        and offers to try again.
+    6a. The AI finds nothing worth changing: System says the process already looks lean.
+    6b. The diagram changes: the ideas are regenerated the next time the chapter is opened;
+        the user can also click "Regenerate".
+
+
+---------------------------------------------------------------------
+USE CASE 12: Consult AI Assistant about the Process
+---------------------------------------------------------------------
+Context of use: The user wants to ask free questions about the current process and get
+    explanations or advice how to simplify or improve it.
+Scope: Prompt2Flow web application
+Level: User-goal
+Primary Actor: User
+Stakeholders & Interests:
+    - User: answers are related to the current diagram, not generic.
+Precondition: A diagram (and optionally its description) is loaded.
+Minimal Guarantees: The assistant does not modify the diagram on its own; on failure an
+    error is shown and the conversation can continue.
+Success Guarantees: The user receives an answer based on the current process.
+Trigger: User sends a message in the assistant chat.
+
+Main Success Scenario:
+    1. User opens the assistant chat.
+    2. User writes a question (e.g. "Which step can be automated?").
+    3. System sends the question, chat history, current diagram and description to the
+       AI Service.
+    4. AI Service returns an answer with analysis or recommendations.
+    5. System shows the answer in the chat.
+    6. User asks further questions (repeat from step 2) or applies the advice via UC-03 / UC-04.
+
+Extensions:
+    1a. No diagram is loaded: the assistant answers general questions only / asks the user
+        to create a diagram first.
+    4a. AI Service error: System shows an error message in the chat.
+
+
+---------------------------------------------------------------------
+USE CASE 13: Model Parallel Flow with Fork and Join Nodes
+---------------------------------------------------------------------
+Context of use: Some activities of the process are performed at the same time by different
+    roles (e.g. "the IT admin prepares the laptop and at the same time the facility manager
+    prepares the desk"). The user wants the diagram to show this parallel work with UML
+    fork and join nodes instead of an either/or decision.
+Scope: Prompt2Flow web application
+Level: User-goal
+Primary Actor: User
+Stakeholders & Interests:
+    - User: parallel work is shown correctly as UML activity diagram notation; it is clear
+      that ALL parallel branches must be finished before the process continues.
+    - Users of exported files: fork/join are recognised by other tools (Enterprise Architect,
+      Camunda, UMLet).
+Precondition: The user is on the "Create process" tab or a diagram is loaded.
+Minimal Guarantees: A fork/join is never treated as a decision (no conditions on its edges,
+    no KPIs); an incorrectly connected fork/join is marked by the linter.
+Success Guarantees: The diagram contains a fork node (black bar) that splits the flow into
+    at least 2 parallel branches and a matching join node (black bar) that merges them; both
+    are kept in saved diagrams and in all export formats.
+Trigger: The description contains parallel work ("at the same time", "in parallel",
+    "simultaneously", "meanwhile"), or the user clicks "Fork" / "Join" in the toolbar.
+
+Main Success Scenario:
+    1. User describes a process in which some activities run at the same time.
+    2. User starts diagram generation (UC-02).
+    3. AI Service recognises the parallel activities and returns a "fork" node before them
+       and a "join" node after them.
+    4. System draws the fork and join as vertical black bars (UML notation) in the lane of
+       the neighbouring step and places each parallel branch in the lane of its role.
+    5. System connects the branches without conditions on the edges.
+    6. Linter checks that the fork has exactly 1 incoming and at least 2 outgoing edges and
+       the join has at least 2 incoming and exactly 1 outgoing edge (UC-05).
+    7. User saves (UC-06) or exports (UC-07) the diagram; System exports the fork/join as
+       uml:ForkNode / uml:JoinNode (XMI), bpmn:parallelGateway (BPMN) and
+       UMLSyncBarVertical (UXF).
+
+Extensions:
+    1a. User models the parallel flow manually:
+        1a1. User clicks "Fork" in the toolbar; System adds a fork bar.
+        1a2. User connects the preceding step to the fork and the fork to 2 or more steps;
+             System does not ask for edge conditions.
+        1a3. User clicks "Join", connects the parallel steps to it and the join to the next
+             step; continue at step 6.
+    1b. User asks the Copilot (UC-03), e.g. "make steps A and B run in parallel": AI Service
+        inserts a fork and a join; continue at step 4.
+    3a. The description contains no parallel work: no fork/join is created.
+    6a. Fork/join is connected incorrectly (e.g. a fork with one outgoing branch): System
+        marks it red with an explanation; User fixes the connections.
+    *a. User selects a fork/join: "KPI" is disabled because fork/join is not a work step;
+        it is also not counted as a step in the statistics (UC-11).
+
+
+---------------------------------------------------------------------
+USE CASE 14: Mark Initial and Final State of the Process
+---------------------------------------------------------------------
+Context of use: Every process diagram must have a clear start and end, drawn in UML
+    notation as an initial node (filled circle) and a final node (circle with a dot). The
+    user should not have to add them manually and older diagrams without them must still work.
+Scope: Prompt2Flow web application
+Level: Subfunction (of UC-02, UC-03, UC-04, UC-06)
+Primary Actor: System (on behalf of the User)
+Stakeholders & Interests:
+    - User: it is visible what triggers the process and what its outcome is.
+    - Users of exported files: initial/final states are exported as standard elements.
+Precondition: A diagram is generated, edited, loaded from the catalog or the first node is
+    added to an empty canvas.
+Minimal Guarantees: Existing steps and edges are never removed; the initial and final node
+    cannot be deleted by the user.
+Success Guarantees: The diagram contains exactly one initial node connected to the first
+    step(s) and one final node connected from the last step(s); the initial node is labelled
+    by the triggering event and the final node by the expected outcome.
+Trigger: A diagram is displayed on the canvas.
+
+Main Success Scenario:
+    1. AI Service returns the diagram with a startEvent labelled by the triggering event and
+       an endEvent labelled by the expected outcome (taken from the description, UC-08).
+    2. System draws the start as a filled circle (UML initial node) and the end as a circle
+       with a dot (UML final node), with the label underneath.
+    3. System places them in the lane of the first / last step.
+    4. Linter treats them as the valid start and end of the flow (UC-05).
+    5. On export System writes them as uml:InitialNode / uml:ActivityFinalNode (XMI),
+       bpmn:startEvent / bpmn:endEvent (BPMN) and initial / final special states (UXF).
+
+Extensions:
+    1a. Diagram has no start node: System adds an initial node and connects it to all
+        steps without an incoming edge.
+    1b. Diagram has no end node: System adds a final node and connects all steps without an
+        outgoing edge to it.
+    1c. Older diagram with a text node "Start"/"End" (or Slovak "Začiatok"/"Koniec"):
+        System converts it into the initial / final node.
+    1d. User adds the first node to an empty canvas (UC-04): System adds the initial and
+        final node automatically.
+    *a. User selects the initial or final node: "Delete", "Role" and "KPI" are disabled;
+        only renaming the label is allowed.

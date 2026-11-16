@@ -107,6 +107,7 @@ The user interface and the generated diagrams are in English, even when the proc
 ### Manual editing
 
 - **Add node** – *Add* button in the toolbar above the canvas
+- **Parallel flow** – *Fork* / *Join* buttons add UML fork and join bars: a fork splits the flow into branches that run at the same time, a join waits until all of them are finished (exported as `uml:ForkNode` / `uml:JoinNode`, BPMN parallel gateway and UMLet sync bar). The generator also creates them when the description says activities happen in parallel.
 - **Rename** – select a node → click *Rename*
 - **Change role** – select a node → click *Role*, or click a lane header to rename the whole lane
 - **Connect nodes** – drag from the right port of one node to the left port of another

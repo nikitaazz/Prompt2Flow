@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 // ── Process statistics: a report split into chapters ─────────────
 
@@ -7,7 +7,7 @@ const KPI_CHART_COLORS = ['#1d6b62', '#c98a3a', '#3f5f8a', '#b4523f', '#7d8f4e',
 const STATS_CHAPTERS = [
   { key: 'finance', title: 'Cost and time', sub: 'Costs, duration and how they are distributed' },
   { key: 'resources', title: 'Actors and resources', sub: 'Roles, specialists, machines and tools' },
-  { key: 'advice', title: 'AI recommendations', sub: 'Bottlenecks and improvement ideas' },
+  { key: 'advice', title: 'AI recommendations', sub: 'What to remove, redesign or automate' },
   { key: 'match', title: 'Match with description', sub: 'How the diagram covers the process description' },
 ];
 
@@ -92,38 +92,6 @@ function KpiPieChart({ items, formatValue, label }) {
       </div>
     </div>
   );
-}
-
-// AI answers come as "HEADING: text" plus bullets; split them into sections and strip Markdown.
-function parseAiSections(text) {
-  const sections = [];
-  let current = null;
-  (text || '').replace(/\*\*/g, '').replace(/^#+\s*/gm, '').split('\n').map((line) => line.trim()).filter(Boolean).forEach((line) => {
-    const heading = line.match(/^([A-ZÁÄČĎÉÍĹĽŇÓÔŔŠŤÚÝŽ][A-ZÁÄČĎÉÍĹĽŇÓÔŔŠŤÚÝŽ /-]{2,48}):\s*(.*)$/);
-    if (heading) {
-      current = { label: heading[1].trim(), lines: heading[2] ? [heading[2].replace(/^[•*-]\s*/, '')] : [] };
-      sections.push(current);
-      return;
-    }
-    if (!current) {
-      current = { label: '', lines: [] };
-      sections.push(current);
-    }
-    current.lines.push(line.replace(/^[•*-]\s*/, ''));
-  });
-  return sections;
-}
-
-function AiSections({ text }) {
-  const sections = parseAiSections(text);
-  return <div className="p2f-ai-sections">
-    {sections.map((section, index) => <div key={index} className="p2f-ai-section">
-      {section.label && <div className="p2f-ai-section__label">{section.label.toLowerCase()}</div>}
-      {section.lines.length > 1
-        ? <ul>{section.lines.map((line, lineIndex) => <li key={lineIndex}>{line}</li>)}</ul>
-        : <p>{section.lines[0]}</p>}
-    </div>)}
-  </div>;
 }
 
 function Loading({ text }) {
@@ -295,24 +263,61 @@ function ResourcesChapter({ workNodes, resources, onReload }) {
 }
 
 // ── 03 AI recommendations ─────────────────────────────────────
-function AdviceChapter({ statsReview, isStatsReviewLoading, diagramReview, isDiagramReviewLoading, onRegenerate }) {
+const ADVICE_GROUPS = [
+  { kind: 'remove', title: 'Remove', hint: 'steps that add no value' },
+  { kind: 'redesign', title: 'Redesign', hint: 'merge, reorder, parallelise' },
+  { kind: 'automate', title: 'Automate', hint: 'let a system do it' },
+];
+
+// Bottleneck from the step KPIs – computed here, no AI needed
+function BottleneckLine({ workNodes }) {
+  const duration = summarizeProcessKpi(workNodes, 'durationMinutes');
+  const cost = summarizeProcessKpi(workNodes, 'costEuros');
+  if (!duration.maximum && !cost.maximum) return null;
+  const takes = duration.maximum && `takes ${formatStatisticDuration(duration.maximum.value)} (${percent(duration.maximum.value, duration.sum)}% of the time)`;
+  const costs = cost.maximum && `costs ${formatStatisticCost(cost.maximum.value)} (${percent(cost.maximum.value, cost.sum)}% of the cost)`;
+  const sameStep = duration.maximum && cost.maximum && duration.maximum.label === cost.maximum.label;
+  return <div className="p2f-bottleneck">
+    <span className="p2f-bottleneck__label">Bottleneck</span>
+    {sameStep
+      ? <span><strong>{duration.maximum.label}</strong> {takes} and {costs}</span>
+      : <>
+        {takes && <span><strong>{duration.maximum.label}</strong> {takes}</span>}
+        {costs && <span><strong>{cost.maximum.label}</strong> {costs}</span>}
+      </>}
+  </div>;
+}
+
+function AdviceChapter({ workNodes, advice, onReload }) {
+  const data = advice.data;
+  const groups = ADVICE_GROUPS.map((group) => ({ ...group, ideas: (data?.ideas || []).filter((idea) => idea.kind === group.kind) })).filter((group) => group.ideas.length);
+
   return <div className="p2f-report__stack">
     <div className="p2f-report__toolbar">
-      <p className="p2f-report__lead">The AI recommendations are based on the current diagram, roles and filled-in KPIs. They do not change the diagram – the decision is yours.</p>
-      <button type="button" className="p2f-btn p2f-btn--sm" onClick={onRegenerate} disabled={isStatsReviewLoading || isDiagramReviewLoading}>Regenerate</button>
+      {advice.loading ? <Loading text="The AI is looking for steps to remove, redesign or automate…" />
+        : advice.error ? <ErrorNote text={advice.error} onRetry={onReload} />
+          : data?.summary ? <p className="p2f-report__lead">{data.summary}</p> : <span />}
+      {!advice.loading && data && <button type="button" className="p2f-btn p2f-btn--sm" onClick={onReload}>Regenerate</button>}
     </div>
-    <div className="p2f-report__grid2">
-      <section className="p2f-panel p2f-panel--accent">
-        <h3 className="p2f-panel__title">Bottleneck: time and cost</h3>
-        {isStatsReviewLoading ? <Loading text="The AI is looking for the most time- or cost-intensive step…" />
-          : statsReview ? <AiSections text={statsReview} /> : <p className="p2f-panel__empty">The analysis is not available yet.</p>}
-      </section>
-      <section className="p2f-panel p2f-panel--accent">
-        <h3 className="p2f-panel__title">Process improvement ideas</h3>
-        {isDiagramReviewLoading ? <Loading text="The AI is checking steps, decisions and ways to simplify…" />
-          : diagramReview ? <AiSections text={diagramReview} /> : <p className="p2f-panel__empty">The diagram review is not available yet.</p>}
-      </section>
-    </div>
+
+    <BottleneckLine workNodes={workNodes} />
+
+    {advice.loading && !data
+      ? <div className="p2f-skeleton-grid">{[1, 2, 3].map((i) => <div key={i} className="p2f-tool-card"><div className="p2f-skeleton" style={{ width: '40%' }} /><div className="p2f-skeleton" style={{ width: '90%', marginBottom: 0 }} /></div>)}</div>
+      : groups.length ? <div className="p2f-idea-columns">{groups.map((group) => <section key={group.kind} className="p2f-idea-group" data-kind={group.kind}>
+        <div className="p2f-idea-group__head"><span className="p2f-idea-group__dot" aria-hidden="true" />{group.title}<span className="p2f-idea-group__count">{group.ideas.length}</span><em>{group.hint}</em></div>
+        <div className="p2f-idea-group__list">
+          {group.ideas.map((idea, index) => <article key={`${idea.step}-${index}`} className="p2f-idea">
+            {idea.step && <span className="p2f-chip p2f-chip--small p2f-idea__step">{idea.step}</span>}
+            <p className="p2f-idea__text">{idea.text}</p>
+            {idea.tool && <div className="p2f-idea__meta"><span>Tool</span>{idea.tool}</div>}
+            {idea.effect && <div className="p2f-idea__meta"><span>Effect</span>{idea.effect}</div>}
+          </article>)}
+        </div>
+      </section>)}</div>
+        : data && !advice.error && <p className="p2f-panel__empty">The process already looks lean – the AI found nothing worth removing, redesigning or automating.</p>}
+
+    <p className="p2f-fineprint">The bottleneck is calculated from the step KPIs. The ideas are AI suggestions based on the diagram, the KPIs and the process description – they do not change the diagram, the decision is yours.</p>
   </div>;
 }
 
@@ -330,17 +335,69 @@ function ScoreRing({ value }) {
   </div>;
 }
 
-function MatchChapter({ accuracy, isLoading, error, isStale, onRecheck, hasDescription }) {
+const EVALUATORS = [{ key: 'nvidia', label: 'NVIDIA' }, { key: 'gemini', label: 'Gemini' }];
+
+function EvaluatorSwitch({ value, onChange, disabled }) {
+  return <div className="p2f-seg" role="group" aria-label="Evaluator model">
+    {EVALUATORS.map((e) => <button key={e.key} type="button" className={`p2f-seg__btn${value === e.key ? ' is-active' : ''}`} aria-pressed={value === e.key} onClick={() => value !== e.key && onChange(e.key)} disabled={disabled} title={`Evaluate with ${e.label}`} style={{ width: 'auto', padding: '0 10px', fontWeight: value === e.key ? 700 : 400 }}>{e.label}</button>)}
+  </div>;
+}
+
+const FIX_ACTIONS = {
+  missing: 'Add (missing from the diagram)',
+  partial: 'Complete (only partly in the diagram)',
+  met: 'Adjust (already in the diagram, see additional instructions)',
+};
+
+// Turns the ticked requirements / extra elements and the user's note into an edit instruction for the AI
+function buildFixPrompt(requirements, extras, note) {
+  const lines = ['Revise the diagram so it matches the original process description better.'];
+  if (requirements.length) {
+    lines.push('', 'Address these requirements from the description:');
+    requirements.forEach((r, i) => {
+      // "met" without a note: nothing concrete to change, so ask the AI to check it rather than point to missing instructions
+      const action = r.status === 'met' && !note.trim() ? 'Check and correct if needed (marked as already in the diagram)' : FIX_ACTIONS[r.status] || FIX_ACTIONS.partial;
+      lines.push(`${i + 1}. ${action}: ${r.text}${r.evidence ? ` (evaluator note: ${r.evidence})` : ''}`);
+    });
+  }
+  if (extras.length) {
+    lines.push('', 'Remove these elements, they are not in the description:');
+    extras.forEach((item) => lines.push(`- ${item}`));
+  }
+  if (note.trim()) lines.push('', `Additional instructions: ${note.trim()}`);
+  lines.push('', 'Keep the rest of the diagram unchanged.');
+  return lines.join('\n');
+}
+
+function MatchChapter({ accuracy, isLoading, error, isStale, onRecheck, hasDescription, evaluator, onEvaluatorChange, onApplyFix, isApplyingFix }) {
+  const [picked, setPicked] = useState(() => new Set());
+  const [note, setNote] = useState('');
+  // A new evaluation lists different requirements, so old ticks no longer apply
+  useEffect(() => { setPicked(new Set()); }, [accuracy]);
+
   if (!hasDescription) {
     return <div className="p2f-report__stack"><p className="p2f-panel__empty">The diagram has no original process description, so there is nothing to compare it with. Describe the process in the "Create process" field and generate a diagram.</p></div>;
   }
   if (isLoading && !accuracy) return <div className="p2f-report__stack"><Loading text="The AI is splitting the description into requirements and checking them in the diagram…" /></div>;
-  if (error && !accuracy) return <div className="p2f-report__stack"><ErrorNote text={error} onRetry={onRecheck} /></div>;
+  if (error && !accuracy) return <div className="p2f-report__stack"><EvaluatorSwitch value={evaluator} onChange={onEvaluatorChange} /><ErrorNote text={error} onRetry={onRecheck} /></div>;
   if (!accuracy) return <div className="p2f-report__stack"><Loading text="Preparing the comparison…" /></div>;
 
   const requirements = [...(accuracy.requirements || [])].sort((a, b) => (STATUS_META[a.status]?.order ?? 0) - (STATUS_META[b.status]?.order ?? 0) || b.importance - a.importance);
   const counts = requirements.reduce((acc, r) => ({ ...acc, [r.status]: (acc[r.status] || 0) + 1 }), {});
   const score = accuracy.accuracy_percent;
+  const extras = accuracy.extra || [];
+  const reqKey = (r, index) => `req:${index}:${r.text}`;
+  const extraKey = (item, index) => `extra:${index}:${item}`;
+  const toggle = (key) => setPicked((prev) => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; });
+  const unmetKeys = requirements.flatMap((r, i) => (r.status === 'met' ? [] : [reqKey(r, i)]));
+  const pickedReqs = requirements.filter((r, i) => picked.has(reqKey(r, i)));
+  const pickedExtras = extras.filter((item, i) => picked.has(extraKey(item, i)));
+  const canFix = Boolean(onApplyFix) && (pickedReqs.length > 0 || pickedExtras.length > 0 || note.trim().length > 0);
+  const applyFix = async () => {
+    if (!canFix || isApplyingFix) return;
+    const ok = await onApplyFix(buildFixPrompt(pickedReqs, pickedExtras, note));
+    if (ok) { setPicked(new Set()); setNote(''); }
+  };
   const verdict = score >= 85 ? 'The diagram faithfully matches the description' : score >= 60 ? 'The diagram partly covers the description' : 'The diagram deviates significantly from the description';
 
   return <div className="p2f-report__stack">
@@ -356,6 +413,7 @@ function MatchChapter({ accuracy, isLoading, error, isStale, onRecheck, hasDescr
         </div>
       </div>
       <div className="p2f-match-hero__actions">
+        <EvaluatorSwitch value={evaluator} onChange={onEvaluatorChange} disabled={isLoading} />
         {isStale && !isLoading && <span className="p2f-tag" data-tone="amber">diagram changed</span>}
         {error && <span className="p2f-tag" data-tone="bad" title={error}>recalculation failed</span>}
         <button type="button" className="p2f-btn p2f-btn--sm" onClick={onRecheck} disabled={isLoading}>{isLoading && <span className="p2f-spinner" aria-hidden="true" />}{isLoading ? 'Recalculating…' : 'Recalculate'}</button>
@@ -374,9 +432,16 @@ function MatchChapter({ accuracy, isLoading, error, isStale, onRecheck, hasDescr
     </section>}
 
     <section className="p2f-panel">
-      <h3 className="p2f-panel__title">Requirements from the description</h3>
+      <div className="p2f-panel__row">
+        <h3 className="p2f-panel__title">Requirements from the description</h3>
+        {onApplyFix && <div className="p2f-req-tools">
+          <button type="button" className="p2f-btn p2f-btn--ghost p2f-btn--sm" onClick={() => setPicked((prev) => new Set([...prev, ...unmetKeys]))} disabled={!unmetKeys.length}>Select unmet</button>
+          <button type="button" className="p2f-btn p2f-btn--ghost p2f-btn--sm" onClick={() => setPicked(new Set())} disabled={!picked.size}>Clear</button>
+        </div>}
+      </div>
       <ul className="p2f-req-list">
-        {requirements.map((r, index) => <li key={`${r.text}-${index}`} className="p2f-req">
+        {requirements.map((r, index) => <li key={`${r.text}-${index}`} className={`p2f-req${onApplyFix ? ' p2f-req--pickable' : ''}${picked.has(reqKey(r, index)) ? ' is-picked' : ''}`}>
+          {onApplyFix && <input type="checkbox" className="p2f-req__check" checked={picked.has(reqKey(r, index))} onChange={() => toggle(reqKey(r, index))} aria-label={`Fix: ${r.text}`} />}
           <span className="p2f-status" data-tone={STATUS_META[r.status]?.tone}>{STATUS_META[r.status]?.label}</span>
           <div className="p2f-req__body">
             <div className="p2f-req__text">{r.text}</div>
@@ -390,15 +455,33 @@ function MatchChapter({ accuracy, isLoading, error, isStale, onRecheck, hasDescr
       </ul>
     </section>
 
-    {accuracy.extra?.length > 0 && <section className="p2f-panel p2f-panel--soft">
-      <h3 className="p2f-panel__title">Extra in the diagram <span className="p2f-panel__hint">does not lower the score</span></h3>
-      <ul className="p2f-plain-list">{accuracy.extra.map((item) => <li key={item}>{item}</li>)}</ul>
+    {extras.length > 0 && <section className="p2f-panel p2f-panel--soft">
+      <h3 className="p2f-panel__title">Extra in the diagram <span className="p2f-panel__hint">does not lower the score{onApplyFix ? ' · tick to remove' : ''}</span></h3>
+      {onApplyFix
+        ? <ul className="p2f-extra-list">{extras.map((item, index) => <li key={`${item}-${index}`}>
+          <label className={`p2f-extra${picked.has(extraKey(item, index)) ? ' is-picked' : ''}`}><input type="checkbox" checked={picked.has(extraKey(item, index))} onChange={() => toggle(extraKey(item, index))} /> <span>{item}</span></label>
+        </li>)}</ul>
+        : <ul className="p2f-plain-list">{extras.map((item) => <li key={item}>{item}</li>)}</ul>}
+    </section>}
+
+    {onApplyFix && <section className={`p2f-panel p2f-fix${pickedReqs.length + pickedExtras.length > 0 ? ' is-active' : ''}`}>
+      <h3 className="p2f-panel__title">Fix the diagram <span className="p2f-panel__hint">{pickedReqs.length + pickedExtras.length} selected</span></h3>
+      <textarea className="p2f-fix__note" rows={2} value={note} onChange={(event) => setNote(event.target.value)} placeholder="What else should change? (optional) e.g. the Manager approves the order, not the Clerk" disabled={isApplyingFix} />
+      {(pickedReqs.length > 0 || pickedExtras.length > 0 || note.trim()) && <details className="p2f-details p2f-fix__preview">
+        <summary>Prompt that will be sent</summary>
+        <pre className="p2f-outline">{buildFixPrompt(pickedReqs, pickedExtras, note)}</pre>
+      </details>}
+      <div className="p2f-fix__actions">
+        <span className="p2f-fineprint">The AI edits the current diagram, then the match is recalculated.</span>
+        <button type="button" className="p2f-btn p2f-btn--primary p2f-btn--sm" onClick={applyFix} disabled={!canFix || isApplyingFix}>{isApplyingFix && <span className="p2f-spinner" aria-hidden="true" />}{isApplyingFix ? 'Applying…' : 'Apply fix'}</button>
+      </div>
     </section>}
 
     <details className="p2f-panel p2f-details">
       <summary>How the AI read the diagram</summary>
       <pre className="p2f-outline">{accuracy.diagram_prompt}</pre>
     </details>
+    {accuracy.evaluator && <p className="p2f-fineprint">Evaluated by {accuracy.evaluator}.</p>}
     <p className="p2f-fineprint">The AI splits the original description into separate requirements (steps, actors, decisions, order, outcome) and checks each one in the diagram. The score is a weighted share: met = 1, partial = 0.5, missing = 0; weighted by importance 1–3. Extra steps do not lower the score.</p>
   </div>;
 }
@@ -406,8 +489,9 @@ function MatchChapter({ accuracy, isLoading, error, isStale, onRecheck, hasDescr
 export default function StatsReport({
   chapter, onChapterChange, onClose, workNodes,
   resources, onReloadResources,
-  statsReview, isStatsReviewLoading, diagramReview, isDiagramReviewLoading, onRegenerateAdvice,
-  accuracy, isAccuracyLoading, accuracyError, isAccuracyStale, onRecheckAccuracy, hasDescription,
+  advice, onReloadAdvice,
+  accuracy, isAccuracyLoading, accuracyError, isAccuracyStale, onRecheckAccuracy, hasDescription, accuracyEvaluator, onAccuracyEvaluatorChange,
+  onApplyAccuracyFix, isApplyingFix,
 }) {
   const actorCount = new Set(workNodes.map((node) => node.data?.actor || 'No role')).size;
   const decisionCount = workNodes.filter((node) => node.data?.isDecision).length;
@@ -438,8 +522,8 @@ export default function StatsReport({
       <div key={chapter} className="p2f-report__body" role="tabpanel">
         {chapter === 'finance' && <FinanceChapter workNodes={workNodes} />}
         {chapter === 'resources' && <ResourcesChapter workNodes={workNodes} resources={resources} onReload={onReloadResources} />}
-        {chapter === 'advice' && <AdviceChapter statsReview={statsReview} isStatsReviewLoading={isStatsReviewLoading} diagramReview={diagramReview} isDiagramReviewLoading={isDiagramReviewLoading} onRegenerate={onRegenerateAdvice} />}
-        {chapter === 'match' && <MatchChapter accuracy={accuracy} isLoading={isAccuracyLoading} error={accuracyError} isStale={isAccuracyStale} onRecheck={onRecheckAccuracy} hasDescription={hasDescription} />}
+        {chapter === 'advice' && <AdviceChapter workNodes={workNodes} advice={advice} onReload={onReloadAdvice} />}
+        {chapter === 'match' && <MatchChapter accuracy={accuracy} isLoading={isAccuracyLoading} error={accuracyError} isStale={isAccuracyStale} onRecheck={onRecheckAccuracy} hasDescription={hasDescription} evaluator={accuracyEvaluator} onEvaluatorChange={onAccuracyEvaluatorChange} onApplyFix={onApplyAccuracyFix} isApplyingFix={isApplyingFix} />}
       </div>
     </section>
   );
