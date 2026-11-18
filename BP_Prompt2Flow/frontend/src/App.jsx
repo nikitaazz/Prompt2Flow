@@ -607,25 +607,6 @@ async function reviewEditWithAI(instruction, currentModel, signal) {
   return data;
 }
 
-async function requestAssistantReply(messages, processDescription, currentModel) {
-  const response = await fetch(`${API}/assistant-chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages, process_description: processDescription, current_model: currentModel }),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.detail || `AI assistant failed (${response.status})`);
-  return data;
-}
-
-async function reviewDiagramWithAI(model, processDescription) {
-  const result = await requestAssistantReply([{
-    role: 'user',
-    content: 'Review this process diagram and suggest concrete improvements. Answer in English exactly in this format, without any polite introduction:\nSUMMARY: one short sentence on whether the process is understandable.\nRECOMMENDATIONS:\n• [a concrete step that can be merged, removed or simplified]\n• [a missing check, decision or responsible role]\nGive at most 3 recommendations and only those that really concern the diagram. If nothing needs to change, write under RECOMMENDATIONS: The process is clear and I see no significant simplification. Do not write a Markdown table or a long paragraph. Do not change the diagram.',
-  }], processDescription, model);
-  return result.reply;
-}
-
 async function fetchProcessAdvice(description, model) {
   const response = await fetch(`${API}/process-advice`, {
     method: 'POST',
@@ -663,9 +644,6 @@ function App() {
   const composerRef = useRef(null);
   const composerPointerRef = useRef(false);
   const renameLaneRef = useRef(null);
-  const [adviceMode, setAdviceMode] = useState('prompt');
-  const [diagramReview, setDiagramReview] = useState('');
-  const [isDiagramReviewLoading, setIsDiagramReviewLoading] = useState(false);
   const [diagramAccuracy, setDiagramAccuracy] = useState(null);
   const [isDiagramAccuracyLoading, setIsDiagramAccuracyLoading] = useState(false);
   const [diagramAccuracyError, setDiagramAccuracyError] = useState('');
@@ -921,16 +899,6 @@ function App() {
   const modelSignature = JSON.stringify(currentModel);
   const structureSignature = structureSignatureOf(taskNodes, edges);
   const isAccuracyStale = Boolean(diagramAccuracy) && accuracySignature !== structureSignature;
-
-  const showDiagramReview = (model, description) => {
-    setAdviceMode('diagram');
-    setDiagramReview('');
-    setIsDiagramReviewLoading(true);
-    reviewDiagramWithAI(model, description)
-      .then(setDiagramReview)
-      .catch((error) => setDiagramReview(`Could not load the AI diagram review: ${error.message}`))
-      .finally(() => setIsDiagramReviewLoading(false));
-  };
 
   // ── Copilot instruction review: same timing rules as the description review, run against the current diagram ──
   const [editReview, setEditReview] = useState(null);
@@ -1315,8 +1283,6 @@ function App() {
       const laidTasks = laid.filter((n) => n.type !== 'swimlane');
       const generatedModel = serializeModel(laidTasks, laidEdges);
       resetDiagramInsights();
-      // No diagram summary in the assistant window after generation; the description review stays as it was
-      setAdviceMode('prompt'); setDiagramReview('');
       runAccuracyCheck(generatedModel, sourceDescription, structureSignatureOf(laidTasks, laidEdges));
     } catch (err) {
       await modalAlert(`Generation failed: ${err.message}`, 'Error');
@@ -2184,7 +2150,6 @@ function App() {
       setEdges(laidEdges);
       saveHistory(laid, laidEdges);
       setSelectedNodeId(null); setSelectedEdgeId(null);
-      showDiagramReview(serializeModel(laid.filter((n) => n.type !== 'swimlane'), laidEdges), promptText);
       if (fromComposer) setCopilotPrompt('');
       return true;
     } catch (err) {
@@ -2386,20 +2351,19 @@ function App() {
     { key: 'edge', caption: 'Edge' },
   ];
   // Review status line: is the shown review up to date with the text?
-  const showPromptReviewStatus = adviceMode !== 'diagram' && composerMode === 'create' && promptText.trim().length >= 30;
+  const showPromptReviewStatus = composerMode === 'create' && promptText.trim().length >= 30;
   const isPromptReviewStale = Boolean(reviewedText) && normalizeForReview(promptText) !== normalizeForReview(reviewedText);
   const promptReviewStatusText = promptReviewStatus === 'loading' ? 'checking…'
     : isPromptReviewStale && promptReview ? 'text changed – re-checks when you pause' : '';
   const canCheckNow = promptReviewStatus !== 'loading' && (isPromptReviewStale || promptReviewStatus === 'error');
   // The same status line for the Copilot instruction review
-  const showEditReviewStatus = adviceMode !== 'diagram' && composerMode === 'manage' && copilotPrompt.trim().length >= EDIT_REVIEW_MIN_LENGTH;
+  const showEditReviewStatus = composerMode === 'manage' && copilotPrompt.trim().length >= EDIT_REVIEW_MIN_LENGTH;
   const isEditReviewStale = Boolean(editReviewedText) && normalizeForReview(copilotPrompt) !== normalizeForReview(editReviewedText);
   const editReviewStatusText = editReviewStatus === 'loading' ? 'checking…'
     : isEditReviewStale && editReview ? 'text changed – re-checks when you pause' : '';
   const canCheckEditNow = editReviewStatus !== 'loading' && (isEditReviewStale || editReviewStatus === 'error');
   const editChanges = editReview?.changes || [];
-  const isAdviceBusy = adviceMode === 'diagram' ? isDiagramReviewLoading
-    : composerMode === 'create' ? promptReviewStatus === 'loading' : editReviewStatus === 'loading';
+  const isAdviceBusy = composerMode === 'create' ? promptReviewStatus === 'loading' : editReviewStatus === 'loading';
 
   // ── AI questions about the description: the answer is appended as "Clarification: …" (the step range changes directly) ──
   const rangeQuestion = (() => {
@@ -2419,7 +2383,7 @@ function App() {
   })();
   const aiQuestions = (composerMode === 'create' && promptReview && promptText.trim().length >= 30
     ? [rangeQuestion, ...(promptReview.questions || []).map((q) => ({ ...q, key: q.question }))]
-    : composerMode === 'manage' && adviceMode !== 'diagram' && editReview && copilotPrompt.trim().length >= EDIT_REVIEW_MIN_LENGTH
+    : composerMode === 'manage' && editReview && copilotPrompt.trim().length >= EDIT_REVIEW_MIN_LENGTH
       ? (editReview.questions || []).map((q) => ({ ...q, key: q.question }))
       : [])
     .filter((q) => q && q.options?.length && !answeredQuestions.includes(q.key));
@@ -2430,8 +2394,6 @@ function App() {
       // An instruction is short: the chosen answer simply becomes part of it
       setCopilotPrompt((prev) => `${prev.trimEnd()}${/[.!?]$/.test(prev.trimEnd()) ? '' : '.'} ${option.clarification}`);
     } else {
-      setAdviceMode('prompt');
-      setDiagramReview('');
       setPromptText((prev) => `${prev.trimEnd()}\nClarification: ${option.clarification}`);
     }
     dismissAiQuestion(question.key);
@@ -2506,8 +2468,8 @@ function App() {
               <div className="p2f-composer__drawer-body">
                 <div className="p2f-composer__head">
                   <div className="p2f-tabs" role="tablist" aria-label="Assistant mode">
-                    <button type="button" role="tab" aria-selected={composerMode === 'create'} className="p2f-tab" onClick={() => { setComposerMode('create'); setAdviceMode('prompt'); setDiagramReview(''); }}>Create process</button>
-                    <button type="button" role="tab" aria-selected={composerMode === 'manage'} className="p2f-tab" onClick={() => { setComposerMode('manage'); if (taskNodes.length) showDiagramReview(currentModel, promptText); else { setAdviceMode('prompt'); setDiagramReview(''); } }}>Manage diagram</button>
+                    <button type="button" role="tab" aria-selected={composerMode === 'create'} className="p2f-tab" onClick={() => setComposerMode('create')}>Create process</button>
+                    <button type="button" role="tab" aria-selected={composerMode === 'manage'} className="p2f-tab" onClick={() => setComposerMode('manage')}>Manage diagram</button>
                   </div>
                   <span className="p2f-spacer" />
                   <span className="p2f-kbd-hint"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> send · <kbd>Esc</kbd> collapse</span>
@@ -2530,9 +2492,9 @@ function App() {
                   </div>)}
                 </div>}
 
-                <div className="p2f-advice" data-tone={adviceMode === 'diagram' ? 'diagram' : 'prompt'} aria-live="polite">
-                  <div className="p2f-advice__title"><span className={`p2f-advice__dot${isAdviceBusy ? ' is-busy' : ''}`} />{adviceMode === 'diagram' ? (composerMode === 'manage' ? 'AI suggestions for changing the diagram' : 'AI diagram review') : composerMode === 'manage' ? 'Check of the edit instruction' : 'Tips for the process description'}{adviceMode === 'diagram' && isDiagramReviewLoading && <span className="p2f-advice__status">· analysing</span>}{showPromptReviewStatus && promptReviewStatusText && <span className="p2f-advice__status">· {promptReviewStatusText}</span>}{showPromptReviewStatus && canCheckNow && <button type="button" className="p2f-advice__action" onClick={() => runPromptReview(promptText.trim())}>Check now</button>}{showEditReviewStatus && editReviewStatusText && <span className="p2f-advice__status">· {editReviewStatusText}</span>}{showEditReviewStatus && canCheckEditNow && <button type="button" className="p2f-advice__action" onClick={() => runEditReview(copilotPrompt.trim())}>Check now</button>}</div>
-                  {adviceMode === 'diagram' ? <div className="p2f-advice__body">{isDiagramReviewLoading ? (composerMode === 'manage' ? 'The AI is looking for concrete ways to improve the diagram…' : 'Checking steps, decisions and ways to simplify the process…') : diagramReview || 'The diagram review is not available yet.'}</div> : composerMode === 'manage' ? <div className="p2f-advice__muted">
+                <div className="p2f-advice" data-tone="prompt" aria-live="polite">
+                  <div className="p2f-advice__title"><span className={`p2f-advice__dot${isAdviceBusy ? ' is-busy' : ''}`} />{composerMode === 'manage' ? 'Check of the edit instruction' : 'Tips for the process description'}{showPromptReviewStatus && promptReviewStatusText && <span className="p2f-advice__status">· {promptReviewStatusText}</span>}{showPromptReviewStatus && canCheckNow && <button type="button" className="p2f-advice__action" onClick={() => runPromptReview(promptText.trim())}>Check now</button>}{showEditReviewStatus && editReviewStatusText && <span className="p2f-advice__status">· {editReviewStatusText}</span>}{showEditReviewStatus && canCheckEditNow && <button type="button" className="p2f-advice__action" onClick={() => runEditReview(copilotPrompt.trim())}>Check now</button>}</div>
+                  {composerMode === 'manage' ?<div className="p2f-advice__muted">
                     {(editReviewStatus === 'idle' || editReviewStatus === 'waiting') && <div className="p2f-guide">
                       <div>Describe a concrete change to the existing diagram. The AI changes only the requested steps and keeps the rest of the process.</div>
                       <div>While you type, the AI checks that it knows <strong>where</strong> to change the diagram and <strong>what</strong> to change – that the steps you name exist, where new steps go, who performs them and where new decisions lead.</div>
@@ -2600,7 +2562,7 @@ function App() {
 
           {composerMode === 'create' ? <form className="p2f-composer__form" onSubmit={(event) => { event.preventDefault(); loadModel(); }}>
             <label className="p2f-composer__mode" htmlFor="p2f-assistant-input">New process</label>
-            <textarea id="p2f-assistant-input" ref={assistantInputRef} className="p2f-composer__input" rows={1} value={promptText} onKeyDown={submitOnModEnter} onChange={(event) => { setAdviceMode('prompt'); setDiagramReview(''); setPromptText(event.target.value); }} placeholder={isComposerCollapsed ? 'Describe the process you want to model…' : DESCRIPTION_EXAMPLE} />
+            <textarea id="p2f-assistant-input" ref={assistantInputRef} className="p2f-composer__input" rows={1} value={promptText} onKeyDown={submitOnModEnter} onChange={(event) => setPromptText(event.target.value)} placeholder={isComposerCollapsed ? 'Describe the process you want to model…' : DESCRIPTION_EXAMPLE} />
             <div className="p2f-composer__options">
               <label className="p2f-option">Steps <input type="number" min="1" className="p2f-num" value={minNodes} onChange={(event) => setMinNodes(event.target.value)} aria-label="Minimum number of steps" /><span aria-hidden="true">–</span><input type="number" min="2" className="p2f-num" value={maxNodes} onChange={(event) => setMaxNodes(event.target.value)} aria-label="Maximum number of steps" /></label>
               <label className="p2f-option p2f-option--check"><input type="checkbox" checked={includeKpi} onChange={(event) => setIncludeKpi(event.target.checked)} /> Estimate time and cost</label>
@@ -2608,7 +2570,7 @@ function App() {
             <button type="submit" className="p2f-btn p2f-btn--primary p2f-composer__submit" disabled={createDisabled}>{isLoading && <span className="p2f-spinner" aria-hidden="true" />}{isLoading ? 'Generating…' : 'Create diagram'}</button>
           </form> : <form className="p2f-composer__form" onSubmit={(event) => { event.preventDefault(); editDiagramWithAI(); }}>
             <label className="p2f-composer__mode" htmlFor="p2f-assistant-input">Edit diagram</label>
-            <textarea id="p2f-assistant-input" ref={assistantInputRef} className="p2f-composer__input" rows={1} value={copilotPrompt} onKeyDown={submitOnModEnter} onChange={(event) => { setAdviceMode('prompt'); setDiagramReview(''); setCopilotPrompt(event.target.value); }} placeholder={isComposerCollapsed ? 'Describe the change the AI should make to the diagram…' : "Example: After 'Select vegetables', add 'Packaging' (actor: Customer), duration 1 minute, cost 0.50 EUR. Connect it to the next step and preserve the rest of the diagram. Or: Rename 'Review order' to 'Check order details' and keep all connections unchanged."} />
+            <textarea id="p2f-assistant-input" ref={assistantInputRef} className="p2f-composer__input" rows={1} value={copilotPrompt} onKeyDown={submitOnModEnter} onChange={(event) => setCopilotPrompt(event.target.value)} placeholder={isComposerCollapsed ? 'Describe the change the AI should make to the diagram…' : "Example: After 'Select vegetables', add 'Packaging' (actor: Customer), duration 1 minute, cost 0.50 EUR. Connect it to the next step and preserve the rest of the diagram. Or: Rename 'Review order' to 'Check order details' and keep all connections unchanged."} />
             <div className="p2f-composer__options p2f-composer__options--buttons">
               <button type="button" className="p2f-btn p2f-btn--sm" onClick={toggleActors}>{showActors ? 'Hide roles in names' : 'Show roles'}</button>
               <button type="button" className="p2f-btn p2f-btn--sm" onClick={undo} title="Undo (Ctrl+Z)"><Icons.Undo /> Undo</button>
