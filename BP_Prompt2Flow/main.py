@@ -149,13 +149,42 @@ class PromptReviewResponse(BaseModel):
     trigger_defined: bool = False          # what starts the process
     activities_identified: bool = False    # main activities and tasks
     roles_specified: bool = False          # responsible employees
-    resources_identified: bool = False     # resources and documents used
+    decisions_defined: bool = False        # every decision says where each of its branches leads
     outcome_defined: bool = False          # expected outcome
     actor_assignments_clear: bool = False
     unclear_tasks: List[str] = []
     suggestions: List[str] = []
     activity_count: int = 0
     questions: List[ReviewQuestion] = []
+
+
+class EditReviewRequest(BaseModel):
+    instruction: str = Field(..., min_length=1, max_length=4000)
+    current_model: dict
+
+
+class EditChangeCheck(BaseModel):
+    """The AI's verdict on one change requested in a Copilot instruction."""
+    number: str = ""
+    text: str                              # short name of the change, e.g. "Add 'Packaging' after 'Pick goods'"
+    operation: str = "other"               # add / remove / rename / move / connect / role / kpi / other
+    targets: List[str] = []                # existing diagram steps the change refers to (the diagram's own spelling)
+    clear: bool = True
+    issue: str = ""
+
+
+class EditReviewResponse(BaseModel):
+    """Review of a Copilot edit instruction against the current diagram, before it is applied."""
+    overall_review: str = ""
+    target_clear: bool = False             # it is clear WHERE in the diagram to change
+    change_clear: bool = False             # it is clear WHAT exactly to change
+    targets_exist: bool = False            # every referenced step really is in the diagram (checked in code)
+    placement_clear: bool = False          # new / moved steps say where they go and how they connect
+    roles_specified: bool = False          # new steps say who performs them
+    decisions_complete: bool = False       # new or changed decisions say where each branch leads
+    changes: List[EditChangeCheck] = []
+    questions: List[ReviewQuestion] = []
+    suggestions: List[str] = []
 
 
 class DiagramAccuracyRequest(BaseModel):
@@ -1103,9 +1132,10 @@ REVIEW_ASPECTS = {  # target -> (review flag, label, suggestion when missing)
     "trigger": ("trigger_defined", "Triggering event", "Add what triggers the process, e.g. \"The process starts when …\"."),
     "roles": ("roles_specified", "Responsible roles", "Say who performs each step."),
     "outcome": ("outcome_defined", "Expected outcome", "Add the expected outcome, e.g. \"The process ends when …\"."),
-    "resources": ("resources_identified", "Resources and documents", "Name the documents, forms or systems used in the steps."),
+    "decisions": ("decisions_defined", "Decision outcomes",
+                  "For every decision, say where each branch leads, e.g. \"If approved, … ; otherwise …\"."),
 }
-QUESTION_ASPECTS = ("trigger", "outcome", "roles")  # aspects worth a question; resources only get a tip
+QUESTION_ASPECTS = ("trigger", "outcome", "roles")  # aspects worth a question; decisions are asked per unclear step, otherwise only a tip
 
 
 def _structured_questions(raw_questions, review: dict) -> List[ReviewQuestion]:
@@ -1174,7 +1204,7 @@ def review_prompt(input: PromptReviewRequest) -> PromptReviewResponse:
   "trigger_defined": true,
   "activities_identified": true,
   "roles_specified": true,
-  "resources_identified": false,
+  "decisions_defined": false,
   "outcome_defined": false,
   "actor_assignments_clear": false,
   "unclear_tasks": ["a concrete step whose performer is unclear"],
@@ -1206,7 +1236,10 @@ Review rules:
    Do not mark a step unclear because of missing time or cost.
 3. The five aspects – mark each true only if the description (overview or steps) really covers it; do not guess:
    trigger_defined (what starts the process), activities_identified (concrete activities in a clear order), roles_specified (who performs the activities),
-   resources_identified (documents, forms, systems or tools used), outcome_defined (the expected result / how the process ends).
+   decisions_defined (for EVERY decision or condition in the process it is clear where each branch leads – what happens next
+   in the "yes" case AND in the "no"/other case, e.g. which step follows or that the process ends; true also when the process has no decisions;
+   false if any branch is left open, e.g. "if the goods are in stock, they are packed" without saying what happens otherwise),
+   outcome_defined (the expected result / how the process ends).
 4. actor_assignments_clear: true only if every step says who performs it. unclear_tasks: steps whose performer is unclear (quoted or briefly named). Do not invent actors.
 6. overall_review: 1–2 sentences on whether the description is understandable and what matters most. If the description is short or still
    being written, phrase it as an interim review. Be factual, brief and encouraging.
@@ -1238,7 +1271,7 @@ Review rules:
                                          issue="" if clear else str(item.get("issue") or "").strip()))
         review["step_checks"] = step_checks[:30]
         for flag in ("overview_present", "steps_listed", "trigger_defined", "activities_identified", "roles_specified",
-                     "resources_identified", "outcome_defined", "actor_assignments_clear"):
+                     "decisions_defined", "outcome_defined", "actor_assignments_clear"):
             review[flag] = str(review.get(flag)).strip().lower() == "true"
         review["questions"] = _structured_questions(review.get("questions"), review)
         review["suggestions"] = _structural_suggestions(review)
@@ -1252,6 +1285,146 @@ Review rules:
             status_code=502,
             detail=f"Groq API returned an invalid response: {str(exc)[:160]}",
         ) from exc
+
+
+EDIT_ASPECTS = {  # review flag -> suggestion when it fails
+    "target_clear": "Name the exact step to change, using its name from the diagram (e.g. \"after 'Check order' …\").",
+    "change_clear": "Say exactly what should change: add, remove, rename, move or reconnect a step, change its role or KPIs.",
+    "targets_exist": "Use the step names exactly as they appear in the diagram.",
+    "placement_clear": "For a new or moved step, say after which step it comes and what follows it.",
+    "roles_specified": "Say who performs each new step (e.g. \"actor: Warehouse worker\").",
+    "decisions_complete": "For a new or changed decision, say where each branch leads (\"if yes … ; otherwise …\").",
+}
+EDIT_OPERATIONS = {"add", "remove", "rename", "move", "connect", "role", "kpi", "other"}
+
+
+def _find_diagram_label(name: str, labels: dict) -> Optional[str]:
+    """The diagram's own spelling of a step the instruction refers to, or None when no step matches."""
+    key = _ascii(name).strip(" '\"")
+    if not key:
+        return None
+    if key in labels:
+        return labels[key]
+    partial = [label for k, label in labels.items() if key in k or k in key]
+    return partial[0] if len(partial) == 1 else None
+
+
+@app.post("/review-edit", response_model=EditReviewResponse)
+def review_edit(input: EditReviewRequest) -> EditReviewResponse:
+    instruction = input.instruction.strip()
+    if len(instruction) < 8:
+        raise HTTPException(status_code=400, detail="Write a little more of the change so the AI can review it.")
+    model = input.current_model or {}
+    nodes = [n for n in (model.get("nodes") or []) if isinstance(n, dict)]
+    if not any(n.get("type") not in CONTROL_NODE_TYPES for n in nodes):
+        raise HTTPException(status_code=400, detail="There is no diagram to edit yet.")
+
+    roles = sorted({str(n.get("actor")).strip() for n in nodes if str(n.get("actor") or "").strip()})
+    review_instructions = f"""A user wants the AI Copilot to change an existing business process diagram. Before the change is applied,
+check whether the instruction is precise enough to carry out WITHOUT guessing. Return only one JSON object:
+{{
+  "overall_review": "1–2 short sentences in English",
+  "changes": [
+    {{"number": "1", "text": "Add 'Packaging' after 'Pick goods'", "operation": "add", "targets": ["Pick goods"], "clear": true, "issue": ""}},
+    {{"number": "2", "text": "Remove the approval step", "operation": "remove", "targets": [], "clear": false, "issue": "The diagram has two approval steps – it is unclear which one."}}
+  ],
+  "target_clear": true,
+  "change_clear": true,
+  "placement_clear": true,
+  "roles_specified": true,
+  "decisions_complete": true,
+  "questions": [
+    {{"target": "change:2", "question": "Which approval step should be removed in change 2?", "options": [
+      {{"label": "Manager approves request", "clarification": "Remove the step 'Manager approves request'."}},
+      {{"label": "Director approves budget", "clarification": "Remove the step 'Director approves budget'."}}
+    ]}}
+  ]
+}}
+
+CURRENT DIAGRAM (steps in flow order, with roles and branches):
+{describe_process_model(model)}
+
+Roles (lanes) in the diagram: {", ".join(roles) or "(none)"}
+
+Rules:
+1. changes: one item for EVERY separate change the instruction asks for, in order. "operation" is one of
+   add, remove, rename, move, connect, role, kpi, other. "targets": the EXISTING steps the change refers to, written exactly
+   as in the diagram above (a reference such as "step 3" or "the last step" must be resolved to that step's name); a step that
+   the change creates is NOT a target. If the instruction names a step that is not in the diagram, put the name as written.
+2. A change is clear (clear = true) only if you know exactly WHERE it applies and WHAT the result should be. Otherwise clear = false
+   and "issue" says in one short sentence what is missing or ambiguous (e.g. "Several steps match 'check'.",
+   "It is not said what the step should be renamed to.", "It is not said where the new step goes.").
+   Do not mark a change unclear only because duration or cost is missing – the Copilot estimates them.
+3. Flags – true only if they really hold for ALL changes; a flag that does not apply to any change is true:
+   target_clear – every change points to an identifiable place in the diagram (one step, edge or lane, not several candidates);
+   change_clear – every change says what exactly to do (the new name, the new role, the new step's name, …);
+   placement_clear – every added or moved step says where it goes (after / before which step, or between which steps)
+     and the flow stays connected (nothing is left without a next step; removing a step reconnects its neighbours or says how);
+   roles_specified – every new step says who performs it (or it obviously belongs to the role of its neighbour step and the
+     instruction says so); a change that adds no step leaves it true;
+   decisions_complete – every new or changed decision / condition says where EACH branch leads; no new decision → true.
+4. questions – at most 3, only for a change with clear = false (target "change:<number>", mention the number in the question),
+   or for a failed flag (target = the flag name) when no change question already covers it.
+   Give 2–3 options taken from the steps and roles that already exist in the diagram (do not invent new ones);
+   "clarification" is a full sentence that gets appended to the instruction, in the language of the instruction.
+   Do not ask about duration, cost, or anything the instruction does not need.
+5. overall_review: say briefly whether the Copilot can apply the instruction as written. Respond in English."""
+
+    review = groq_json(review_instructions, f"INSTRUCTION:\n{instruction}", max_tokens=2500, temperature=0.2,
+                       reasoning_effort="low")
+    try:
+        labels = {_ascii(n.get("label")): str(n.get("label")).strip() for n in nodes
+                  if n.get("type") not in CONTROL_NODE_TYPES and str(n.get("label") or "").strip()}
+        targets_exist = True
+        changes = []
+        for item in review.get("changes") or []:
+            if not isinstance(item, dict) or not str(item.get("text") or "").strip():
+                continue
+            clear = item.get("clear") is not False and str(item.get("clear")).lower() != "false"
+            issue = "" if clear else str(item.get("issue") or "").strip()
+            targets, missing = [], []
+            for raw in item.get("targets") or []:
+                found = _find_diagram_label(raw, labels)
+                (targets if found else missing).append(found or str(raw).strip())
+            if missing:  # verified here, not left to the model: a step that is not in the diagram cannot be edited
+                targets_exist, clear = False, False
+                issue = f"\"{missing[0]}\" is not a step of the diagram."
+            operation = _ascii(item.get("operation"))
+            changes.append(EditChangeCheck(number=str(item.get("number") or len(changes) + 1).strip(),
+                                           text=str(item["text"]).strip(), operation=operation if operation in EDIT_OPERATIONS else "other",
+                                           targets=targets, clear=clear, issue=issue))
+        flags = {flag: str(review.get(flag)).strip().lower() == "true" for flag in EDIT_ASPECTS if flag != "targets_exist"}
+        flags["targets_exist"] = targets_exist
+        if not targets_exist:
+            flags["target_clear"] = False
+
+        unclear = {_ascii(c.number): c for c in changes if not c.clear}
+        questions = {}
+        for q in review.get("questions") or []:
+            if not isinstance(q, dict) or not str(q.get("question") or "").strip():
+                continue
+            target = _ascii(q.get("target")).replace(" ", "")
+            if target.startswith("change:") and target[7:] in unclear:
+                change = unclear[target[7:]]
+                label, priority = f"Change {change.number} – {change.text}", list(unclear).index(target[7:])
+            elif target in flags and not flags[target]:
+                label, priority = target.replace("_", " ").capitalize(), 100 + list(EDIT_ASPECTS).index(target)
+            else:
+                continue
+            options = [ReviewOption(label=str(o["label"]).strip(), clarification=str(o.get("clarification") or o["label"]).strip())
+                       for o in (q.get("options") or []) if isinstance(o, dict) and str(o.get("label") or "").strip()]
+            if len(options) >= 2 and target not in questions:
+                questions[target] = (priority, ReviewQuestion(question=str(q["question"]).strip(), options=options[:3],
+                                                              target=target, target_label=label))
+        ordered_questions = [question for _, question in sorted(questions.values(), key=lambda item: item[0])][:3]
+
+        asked = {q.target for q in ordered_questions}
+        tips = [f"Change {c.number}: {c.issue}" for c in changes if not c.clear and c.issue and f"change:{_ascii(c.number)}" not in asked]
+        tips += [tip for flag, tip in EDIT_ASPECTS.items() if not flags[flag] and flag not in asked]
+        return EditReviewResponse(overall_review=str(review.get("overall_review") or "").strip(), changes=changes[:15],
+                                  questions=ordered_questions, suggestions=tips[:3], **flags)
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise HTTPException(status_code=502, detail=f"Groq API returned an invalid response: {str(exc)[:160]}") from exc
 
 
 @app.post("/assistant-chat", response_model=AssistantChatResponse)

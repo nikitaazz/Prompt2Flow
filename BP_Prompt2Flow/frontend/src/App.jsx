@@ -131,9 +131,19 @@ const DESCRIPTION_PARTS = [
 const DESCRIPTION_ASPECTS = [
   { key: 'trigger_defined', label: 'Triggering event' },
   { key: 'roles_specified', label: 'Responsible roles' },
-  { key: 'resources_identified', label: 'Resources and documents' },
+  { key: 'decisions_defined', label: 'Decision outcomes' },
   { key: 'outcome_defined', label: 'Expected outcome' },
 ];
+// What the AI checks in a Copilot edit instruction before it is applied
+const EDIT_ASPECTS = [
+  { key: 'target_clear', label: 'Where to change' },
+  { key: 'change_clear', label: 'What to change' },
+  { key: 'targets_exist', label: 'Steps exist in the diagram' },
+  { key: 'placement_clear', label: 'Placement and connections' },
+  { key: 'roles_specified', label: 'Roles of new steps' },
+  { key: 'decisions_complete', label: 'Decision branches' },
+];
+const EDIT_REVIEW_MIN_LENGTH = 8;
 const DESCRIPTION_EXAMPLE = [
   'Write a short overview first, then the steps, for example:',
   '',
@@ -585,6 +595,18 @@ async function reviewPromptWithAI(prompt, signal) {
   return data;
 }
 
+async function reviewEditWithAI(instruction, currentModel, signal) {
+  const response = await fetch(`${API}/review-edit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ instruction, current_model: currentModel }),
+    signal,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || `AI review failed (${response.status})`);
+  return data;
+}
+
 async function requestAssistantReply(messages, processDescription, currentModel) {
   const response = await fetch(`${API}/assistant-chat`, {
     method: 'POST',
@@ -910,6 +932,66 @@ function App() {
       .finally(() => setIsDiagramReviewLoading(false));
   };
 
+  // ── Copilot instruction review: same timing rules as the description review, run against the current diagram ──
+  const [editReview, setEditReview] = useState(null);
+  const [editReviewStatus, setEditReviewStatus] = useState('idle');
+  const [editReviewError, setEditReviewError] = useState('');
+  const [editReviewedText, setEditReviewedText] = useState('');
+  const [editReviewNonce, setEditReviewNonce] = useState(0);
+  const editInFlightRef = useRef(false);
+  const editQueuedRef = useRef(false);
+  const editAbortRef = useRef(null);
+  const editLastSentAtRef = useRef(0);
+
+  const runEditReview = async (instruction) => {
+    if (editInFlightRef.current) { editQueuedRef.current = true; return; }
+    editInFlightRef.current = true;
+    editLastSentAtRef.current = Date.now();
+    setEditReviewedText(instruction);
+    setEditReviewStatus('loading');
+    setEditReviewError('');
+    const controller = new AbortController();
+    editAbortRef.current = controller;
+    const timeoutId = setTimeout(() => controller.abort('timeout'), REVIEW_TIMEOUT_MS);
+    try {
+      const review = await reviewEditWithAI(instruction, currentModel, controller.signal);
+      setEditReview(review);
+      setAnsweredQuestions((prev) => prev.filter((key) => key === 'range'));
+      setEditReviewStatus('ready');
+    } catch (error) {
+      if (controller.signal.reason === 'cancelled') return;
+      setEditReviewError(controller.signal.reason === 'timeout'
+        ? 'The review took too long. It will run again after your next change, or click Check now.'
+        : error.message);
+      setEditReviewStatus('error');
+    } finally {
+      clearTimeout(timeoutId);
+      editInFlightRef.current = false;
+      if (editQueuedRef.current) { editQueuedRef.current = false; setEditReviewNonce((n) => n + 1); }
+    }
+  };
+
+  useEffect(() => {
+    const instruction = copilotPrompt.trim();
+    if (composerMode !== 'manage' || instruction.length < EDIT_REVIEW_MIN_LENGTH || !workNodes.length) {
+      if (composerMode !== 'manage') { editAbortRef.current?.abort('cancelled'); editQueuedRef.current = false; }
+      if (!editInFlightRef.current || composerMode !== 'manage') {
+        setEditReview(null);
+        setEditReviewError('');
+        setEditReviewStatus(instruction && composerMode === 'manage' ? 'waiting' : 'idle');
+        setEditReviewedText('');
+      }
+      return undefined;
+    }
+    if (editReviewedText && changedCharCount(normalizeForReview(instruction), normalizeForReview(editReviewedText)) < REVIEW_MIN_CHANGE) return undefined;
+    if (!editReview && !editInFlightRef.current) setEditReviewStatus('waiting');
+    const delay = Math.max(REVIEW_PAUSE_MS, editLastSentAtRef.current + REVIEW_MIN_GAP_MS - Date.now());
+    const timeoutId = setTimeout(() => runEditReview(instruction), delay);
+    return () => clearTimeout(timeoutId);
+  }, [copilotPrompt, composerMode, editReviewNonce]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => () => editAbortRef.current?.abort('cancelled'), []);
+
   // Improvement ideas (remove / redesign / automate) for the "AI recommendations" chapter
   const loadAdvice = (model, description, signature) => {
     const requestId = adviceRequestRef.current + 1;
@@ -1233,7 +1315,8 @@ function App() {
       const laidTasks = laid.filter((n) => n.type !== 'swimlane');
       const generatedModel = serializeModel(laidTasks, laidEdges);
       resetDiagramInsights();
-      showDiagramReview(generatedModel, sourceDescription);
+      // No diagram summary in the assistant window after generation; the description review stays as it was
+      setAdviceMode('prompt'); setDiagramReview('');
       runAccuracyCheck(generatedModel, sourceDescription, structureSignatureOf(laidTasks, laidEdges));
     } catch (err) {
       await modalAlert(`Generation failed: ${err.message}`, 'Error');
@@ -2308,7 +2391,15 @@ function App() {
   const promptReviewStatusText = promptReviewStatus === 'loading' ? 'checking…'
     : isPromptReviewStale && promptReview ? 'text changed – re-checks when you pause' : '';
   const canCheckNow = promptReviewStatus !== 'loading' && (isPromptReviewStale || promptReviewStatus === 'error');
-  const isAdviceBusy = adviceMode === 'diagram' ? isDiagramReviewLoading : composerMode === 'create' && promptReviewStatus === 'loading';
+  // The same status line for the Copilot instruction review
+  const showEditReviewStatus = adviceMode !== 'diagram' && composerMode === 'manage' && copilotPrompt.trim().length >= EDIT_REVIEW_MIN_LENGTH;
+  const isEditReviewStale = Boolean(editReviewedText) && normalizeForReview(copilotPrompt) !== normalizeForReview(editReviewedText);
+  const editReviewStatusText = editReviewStatus === 'loading' ? 'checking…'
+    : isEditReviewStale && editReview ? 'text changed – re-checks when you pause' : '';
+  const canCheckEditNow = editReviewStatus !== 'loading' && (isEditReviewStale || editReviewStatus === 'error');
+  const editChanges = editReview?.changes || [];
+  const isAdviceBusy = adviceMode === 'diagram' ? isDiagramReviewLoading
+    : composerMode === 'create' ? promptReviewStatus === 'loading' : editReviewStatus === 'loading';
 
   // ── AI questions about the description: the answer is appended as "Clarification: …" (the step range changes directly) ──
   const rangeQuestion = (() => {
@@ -2326,14 +2417,19 @@ function App() {
     ] };
     return null;
   })();
-  const aiQuestions = composerMode === 'create' && promptReview && promptText.trim().length >= 30
+  const aiQuestions = (composerMode === 'create' && promptReview && promptText.trim().length >= 30
     ? [rangeQuestion, ...(promptReview.questions || []).map((q) => ({ ...q, key: q.question }))]
-      .filter((q) => q && q.options?.length && !answeredQuestions.includes(q.key))
-    : [];
+    : composerMode === 'manage' && adviceMode !== 'diagram' && editReview && copilotPrompt.trim().length >= EDIT_REVIEW_MIN_LENGTH
+      ? (editReview.questions || []).map((q) => ({ ...q, key: q.question }))
+      : [])
+    .filter((q) => q && q.options?.length && !answeredQuestions.includes(q.key));
   const dismissAiQuestion = (key) => setAnsweredQuestions((prev) => [...prev, key]);
   const answerAiQuestion = (question, option) => {
     if (option.apply) option.apply();
-    else {
+    else if (composerMode === 'manage') {
+      // An instruction is short: the chosen answer simply becomes part of it
+      setCopilotPrompt((prev) => `${prev.trimEnd()}${/[.!?]$/.test(prev.trimEnd()) ? '' : '.'} ${option.clarification}`);
+    } else {
       setAdviceMode('prompt');
       setDiagramReview('');
       setPromptText((prev) => `${prev.trimEnd()}\nClarification: ${option.clarification}`);
@@ -2418,7 +2514,7 @@ function App() {
                 </div>
 
                 {aiQuestions.length > 0 && <div className="p2f-questions">
-                  <div className="p2f-questions__title">AI questions<span>optional · the answer is added to the description</span></div>
+                  <div className="p2f-questions__title">AI questions<span>optional · the answer is added to the {composerMode === 'manage' ? 'instruction' : 'description'}</span></div>
                   {aiQuestions.map((q) => <div key={q.key} className="p2f-question">
                     <div className="p2f-question__head">
                       <div className="p2f-question__text">{q.target_label && <span className="p2f-question__target">{q.target_label}</span>}{q.question}</div>
@@ -2435,8 +2531,36 @@ function App() {
                 </div>}
 
                 <div className="p2f-advice" data-tone={adviceMode === 'diagram' ? 'diagram' : 'prompt'} aria-live="polite">
-                  <div className="p2f-advice__title"><span className={`p2f-advice__dot${isAdviceBusy ? ' is-busy' : ''}`} />{adviceMode === 'diagram' ? (composerMode === 'manage' ? 'AI suggestions for changing the diagram' : 'AI diagram review') : composerMode === 'manage' ? 'Diagram editing suggestions' : 'Tips for the process description'}{adviceMode === 'diagram' && isDiagramReviewLoading && <span className="p2f-advice__status">· analysing</span>}{showPromptReviewStatus && promptReviewStatusText && <span className="p2f-advice__status">· {promptReviewStatusText}</span>}{showPromptReviewStatus && canCheckNow && <button type="button" className="p2f-advice__action" onClick={() => runPromptReview(promptText.trim())}>Check now</button>}</div>
-                  {adviceMode === 'diagram' ? <div className="p2f-advice__body">{isDiagramReviewLoading ? (composerMode === 'manage' ? 'The AI is looking for concrete ways to improve the diagram…' : 'Checking steps, decisions and ways to simplify the process…') : diagramReview || 'The diagram review is not available yet.'}</div> : composerMode === 'manage' ? <div className="p2f-advice__muted">Describe a concrete change to the existing diagram. The AI changes only the requested steps and keeps the rest of the process.</div> : <div className="p2f-advice__muted">
+                  <div className="p2f-advice__title"><span className={`p2f-advice__dot${isAdviceBusy ? ' is-busy' : ''}`} />{adviceMode === 'diagram' ? (composerMode === 'manage' ? 'AI suggestions for changing the diagram' : 'AI diagram review') : composerMode === 'manage' ? 'Check of the edit instruction' : 'Tips for the process description'}{adviceMode === 'diagram' && isDiagramReviewLoading && <span className="p2f-advice__status">· analysing</span>}{showPromptReviewStatus && promptReviewStatusText && <span className="p2f-advice__status">· {promptReviewStatusText}</span>}{showPromptReviewStatus && canCheckNow && <button type="button" className="p2f-advice__action" onClick={() => runPromptReview(promptText.trim())}>Check now</button>}{showEditReviewStatus && editReviewStatusText && <span className="p2f-advice__status">· {editReviewStatusText}</span>}{showEditReviewStatus && canCheckEditNow && <button type="button" className="p2f-advice__action" onClick={() => runEditReview(copilotPrompt.trim())}>Check now</button>}</div>
+                  {adviceMode === 'diagram' ? <div className="p2f-advice__body">{isDiagramReviewLoading ? (composerMode === 'manage' ? 'The AI is looking for concrete ways to improve the diagram…' : 'Checking steps, decisions and ways to simplify the process…') : diagramReview || 'The diagram review is not available yet.'}</div> : composerMode === 'manage' ? <div className="p2f-advice__muted">
+                    {(editReviewStatus === 'idle' || editReviewStatus === 'waiting') && <div className="p2f-guide">
+                      <div>Describe a concrete change to the existing diagram. The AI changes only the requested steps and keeps the rest of the process.</div>
+                      <div>While you type, the AI checks that it knows <strong>where</strong> to change the diagram and <strong>what</strong> to change – that the steps you name exist, where new steps go, who performs them and where new decisions lead.</div>
+                    </div>}
+                    {editReviewStatus === 'loading' && !editReview && 'Groq is reviewing the instruction…'}
+                    {editReviewStatus === 'error' && <div className="p2f-review__note is-warn">{editReviewError}</div>}
+                    {editReviewStatus !== 'idle' && editReviewStatus !== 'waiting' && editReview && <div className={`p2f-review${isEditReviewStale || editReviewStatus === 'loading' ? ' is-stale' : ''}`}>
+                      <div className="p2f-review__summary">{editReview.overall_review}</div>
+                      <ul className="p2f-checklist">
+                        {EDIT_ASPECTS.map(({ key, label }) => {
+                          const ok = Boolean(editReview[key]);
+                          return <li key={key} className={ok ? 'is-ok' : 'is-missing'}>
+                            {ok ? <Icons.Check /> : <Icons.Dash />}<span>{label}{ok ? '' : ' — unclear'}</span>
+                          </li>;
+                        })}
+                      </ul>
+                      {editChanges.length > 0 && <div className="p2f-steps-check">
+                        <div className="p2f-steps-check__title">How the AI understands your change<span>{editChanges.filter((change) => change.clear).length} of {editChanges.length} clear</span></div>
+                        <ol className="p2f-steps-check__list">
+                          {editChanges.map((change, index) => <li key={`${change.number}-${index}`} className={change.clear ? 'is-ok' : 'is-missing'}>
+                            {change.clear ? <Icons.Check /> : <Icons.Dash />}
+                            <span><strong>{change.number ? `${change.number}. ` : ''}{change.text}</strong>{change.targets?.length > 0 && <span className="p2f-steps-check__issue"> · at {change.targets.map((target) => `'${target}'`).join(', ')}</span>}{!change.clear && change.issue && <span className="p2f-steps-check__issue"> — {change.issue}</span>}</span>
+                          </li>)}
+                        </ol>
+                      </div>}
+                      {editReview.suggestions?.length > 0 && <div className="p2f-review__note"><strong>Tips:</strong> {editReview.suggestions.slice(0, 3).join(' · ')}</div>}
+                    </div>}
+                  </div> : <div className="p2f-advice__muted">
                     {(promptReviewStatus === 'idle' || promptReviewStatus === 'waiting') && <div className="p2f-guide">
                       <div>Write the description in two parts:</div>
                       <ol className="p2f-guide__steps">
@@ -2484,7 +2608,7 @@ function App() {
             <button type="submit" className="p2f-btn p2f-btn--primary p2f-composer__submit" disabled={createDisabled}>{isLoading && <span className="p2f-spinner" aria-hidden="true" />}{isLoading ? 'Generating…' : 'Create diagram'}</button>
           </form> : <form className="p2f-composer__form" onSubmit={(event) => { event.preventDefault(); editDiagramWithAI(); }}>
             <label className="p2f-composer__mode" htmlFor="p2f-assistant-input">Edit diagram</label>
-            <textarea id="p2f-assistant-input" ref={assistantInputRef} className="p2f-composer__input" rows={1} value={copilotPrompt} onKeyDown={submitOnModEnter} onChange={(event) => { setCopilotPrompt(event.target.value); }} placeholder={isComposerCollapsed ? 'Describe the change the AI should make to the diagram…' : "Example: After 'Select vegetables', add 'Packaging' (actor: Customer), duration 1 minute, cost 0.50 EUR. Connect it to the next step and preserve the rest of the diagram. Or: Rename 'Review order' to 'Check order details' and keep all connections unchanged."} />
+            <textarea id="p2f-assistant-input" ref={assistantInputRef} className="p2f-composer__input" rows={1} value={copilotPrompt} onKeyDown={submitOnModEnter} onChange={(event) => { setAdviceMode('prompt'); setDiagramReview(''); setCopilotPrompt(event.target.value); }} placeholder={isComposerCollapsed ? 'Describe the change the AI should make to the diagram…' : "Example: After 'Select vegetables', add 'Packaging' (actor: Customer), duration 1 minute, cost 0.50 EUR. Connect it to the next step and preserve the rest of the diagram. Or: Rename 'Review order' to 'Check order details' and keep all connections unchanged."} />
             <div className="p2f-composer__options p2f-composer__options--buttons">
               <button type="button" className="p2f-btn p2f-btn--sm" onClick={toggleActors}>{showActors ? 'Hide roles in names' : 'Show roles'}</button>
               <button type="button" className="p2f-btn p2f-btn--sm" onClick={undo} title="Undo (Ctrl+Z)"><Icons.Undo /> Undo</button>

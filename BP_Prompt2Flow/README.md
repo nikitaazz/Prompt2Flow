@@ -83,7 +83,7 @@ After a short pause in typing, the Groq API checks whether both parts are presen
 1. **The event that triggers the process** – addresses missing start conditions.
 2. **The main activities and tasks** – addresses unstructured descriptions and insufficient detail.
 3. **The responsible employees** – addresses missing roles.
-4. **The resources and documents used** – helps distinguish activities from related information.
+4. **Where each decision leads** – every branch of a decision ("yes" and "no") must say what happens next, so no gateway is left with an open end.
 5. **The expected outcome** – addresses unclear process completion.
 
 The generator uses the overview as context and the numbered steps as the activities; the triggering event and the expected outcome become the labels of the start and end nodes, and resources and documents stay inside the activity names instead of becoming separate steps. The review may also ask up to three clarifying questions; the chosen answer is appended to the description as a `Clarification:` line. All AI features use the Groq API; set `GROQ_API_KEY` in `.env`.

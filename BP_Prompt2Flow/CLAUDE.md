@@ -51,6 +51,7 @@ The project has no automated test suite. `test_main.http` contains only a few ad
   - `/generate-model` turns a description into a diagram (`generate_diagram_from_text`).
   - `/edit-model` applies Copilot instructions to the current model (`edit_diagram_with_ai`).
   - `/review-prompt` reviews the description while the user types.
+  - `/review-edit` reviews a Copilot instruction against the current diagram while the user types (where/what to change, placement, roles, decision branches). Whether each referenced step exists is checked in code, not by the LLM.
   - `/evaluate-model` handles "Match with description". The chosen evaluator first rewrites the diagram as prose without seeing the original description (`diagram_to_text`, which uses `describe_process_model` as the flow outline). It then splits the original description into requirements and judges each one. The score is computed deterministically (met = 1, partial = 0.5, missing = 0, weighted by importance). If Gemini has no key, it falls back to Groq.
   - `/process-resources` estimates the specialists and machines/tools the steps need.
   - `/assistant-chat` and the review endpoints handle the remaining AI features.

@@ -28,6 +28,7 @@ Contents
     UC-12  Consult AI Assistant about the Process
     UC-13  Model Parallel Flow with Fork and Join Nodes
     UC-14  Mark Initial and Final State of the Process
+    UC-15  Validate Copilot Edit Instruction
 
 
 =====================================================================
@@ -276,7 +277,7 @@ Main Success Scenario:
     2. System waits for a short pause and sends the text and step range to the AI Service.
     3. AI Service checks presence of the overview and of numbered steps.
     4. AI Service checks the five aspects: triggering event, main activities, responsible
-       roles, resources/documents, expected outcome.
+       roles, decision outcomes (where each branch leads), expected outcome.
     5. AI Service evaluates every step: marks it understood or states what is missing
        (e.g. who performs it, what happens if a condition is not met).
     6. System checks whether the number of steps lies within the min - max range.
@@ -523,3 +524,46 @@ Extensions:
         final node automatically.
     *a. User selects the initial or final node: "Delete", "Role" and "KPI" are disabled;
         only renaming the label is allowed.
+
+
+---------------------------------------------------------------------
+USE CASE 15: Validate Copilot Edit Instruction
+---------------------------------------------------------------------
+Context of use: While writing an instruction for the AI Copilot the user wants immediate
+    feedback whether the AI understands where in the diagram and what exactly to change,
+    before the change is applied.
+Scope: Prompt2Flow web application
+Level: Subfunction (of UC-03)
+Primary Actor: User
+Stakeholders & Interests:
+    - User: an imprecise instruction is caught before it changes the wrong step.
+    - Application owner: fewer failed or unexpected Copilot edits.
+Precondition: A diagram is open; the user is writing on the "Manage diagram" tab; AI Service
+    is reachable.
+Minimal Guarantees: The diagram and the instruction are never changed without the user's
+    action; if the review fails, the user can still apply the change.
+Success Guarantees: The user sees each requested change, the diagram steps it refers to and
+    whether it is clear; chosen answers are appended to the instruction.
+Trigger: The user pauses typing (debounce).
+
+Main Success Scenario:
+    1. User types an edit instruction.
+    2. System waits for a short pause and sends the instruction and the current diagram to
+       the AI Service.
+    3. AI Service splits the instruction into separate changes (add, remove, rename, move,
+       connect, role, KPI) and resolves the diagram steps each change refers to.
+    4. System verifies that every referenced step exists in the diagram.
+    5. AI Service checks six criteria: where to change, what to change, referenced steps
+       exist, placement and connections of new/moved steps, roles of new steps, branches of
+       new/changed decisions.
+    6. System shows the review and up to three clarifying questions with answer options taken
+       from the existing steps and roles.
+    7. User chooses an answer; System appends it to the instruction and reviews it again.
+    8. User applies the change (UC-03).
+
+Extensions:
+    4a. A referenced step is not in the diagram: System marks the change unclear and asks
+        which existing step was meant.
+    6a. Instruction is clear: System shows no questions, only confirmation.
+    7a. User ignores the questions: User may still apply the change.
+    2a. AI Service unavailable: System shows a warning; "Check now" retries the review.
