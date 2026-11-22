@@ -29,6 +29,7 @@ Contents
     UC-13  Model Parallel Flow with Fork and Join Nodes
     UC-14  Mark Initial and Final State of the Process
     UC-15  Validate Copilot Edit Instruction
+    UC-16  Read the User Guide
 
 
 =====================================================================
@@ -153,7 +154,7 @@ Trigger: User uses a toolbar action or interacts with the canvas.
 
 Main Success Scenario:
     1. User selects a node.
-    2. User renames it / changes its role, or adds a new node with "Add".
+    2. User renames it, changes its role or edits its KPIs.
     3. User connects nodes by dragging from the right port of one node to the left port of another.
     4. User clicks "Align".
     5. System re-calculates the layout and swimlanes and redraws the diagram.
@@ -163,6 +164,8 @@ Extensions:
         nodes in that lane.
     2a. User deletes a node or an edge: System removes it and connected edges.
     *a. User presses Ctrl+Z / Ctrl+Y: System restores the previous / next state.
+    *b. User wants to add a new node: nodes are no longer added manually (removed in the
+        extension); User asks the Copilot (UC-03).
 
 
 ---------------------------------------------------------------------
@@ -450,7 +453,7 @@ Success Guarantees: The diagram contains a fork node (black bar) that splits the
     at least 2 parallel branches and a matching join node (black bar) that merges them; both
     are kept in saved diagrams and in all export formats.
 Trigger: The description contains parallel work ("at the same time", "in parallel",
-    "simultaneously", "meanwhile"), or the user clicks "Fork" / "Join" in the toolbar.
+    "simultaneously", "meanwhile"), or the user asks the Copilot to run steps in parallel.
 
 Main Success Scenario:
     1. User describes a process in which some activities run at the same time.
@@ -467,13 +470,7 @@ Main Success Scenario:
        UMLSyncBarVertical (UXF).
 
 Extensions:
-    1a. User models the parallel flow manually:
-        1a1. User clicks "Fork" in the toolbar; System adds a fork bar.
-        1a2. User connects the preceding step to the fork and the fork to 2 or more steps;
-             System does not ask for edge conditions.
-        1a3. User clicks "Join", connects the parallel steps to it and the join to the next
-             step; continue at step 6.
-    1b. User asks the Copilot (UC-03), e.g. "make steps A and B run in parallel": AI Service
+    1a. User asks the Copilot (UC-03), e.g. "make steps A and B run in parallel": AI Service
         inserts a fork and a join; continue at step 4.
     3a. The description contains no parallel work: no fork/join is created.
     6a. Fork/join is connected incorrectly (e.g. a fork with one outgoing branch): System
@@ -567,3 +564,38 @@ Extensions:
     6a. Instruction is clear: System shows no questions, only confirmation.
     7a. User ignores the questions: User may still apply the change.
     2a. AI Service unavailable: System shows a warning; "Check now" retries the review.
+
+
+USE CASE 16: Read the User Guide
+---------------------------------------------------------------------
+Context of use: The user wants to learn how to work with the application and how to write a
+    description from which a correct diagram is generated, without leaving the application.
+Scope: Prompt2Flow web application
+Level: Subfunction (of UC-02, UC-03 and UC-11)
+Primary Actor: User
+Stakeholders & Interests:
+    - User: learns the modelling cycle and the rules for a good description without external
+      documentation.
+    - Application owner: fewer incomplete descriptions and failed generations.
+Precondition: The application is open in a web browser.
+Minimal Guarantees: Opening and closing the guide does not change the description, the
+    instruction or the diagram.
+Success Guarantees: The user has read the chosen chapter and returns to the unchanged canvas.
+Trigger: The user selects "User guide" in the "More tools" menu.
+
+Main Success Scenario:
+    1. User opens the "More tools" menu and selects "User guide".
+    2. System opens the guide with the first chapter, "Getting started" (the modelling cycle
+       step by step).
+    3. User selects a chapter: "Writing a description", "Editing the diagram", "Statistics"
+       or "Save and export".
+    4. System shows the chapter: rules for a process description with an annotated example
+       of a feature deployment; manual changes and Copilot instructions; the four chapters of
+       the statistics report; the catalog and the export formats.
+    5. User closes the guide and continues on the canvas, e.g. writes a description (UC-02)
+       or an edit instruction (UC-03).
+
+Extensions:
+    3a. User switches between chapters: System shows the selected chapter; steps 3-4 repeat.
+    *a. User closes the guide at any time with the close button, the Escape key or a click
+        outside it.

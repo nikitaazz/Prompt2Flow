@@ -274,74 +274,256 @@ function AppModal({ config, onClose }) {
   );
 }
 
-function InfoModal({ onClose }) {
+// ── USER GUIDE: five chapters, the same layout as the statistics report ──
+const GUIDE_CHAPTERS = [
+  { key: 'start', title: 'Getting started', sub: 'The modelling cycle step by step' },
+  { key: 'describe', title: 'Writing a description', sub: 'How to write the process prompt' },
+  { key: 'edit', title: 'Editing the diagram', sub: 'Manual changes and Copilot instructions' },
+  { key: 'stats', title: 'Statistics', sub: 'Cost, resources, advice and match' },
+  { key: 'save', title: 'Save and export', sub: 'Catalog, formats and notes' },
+];
+
+const GUIDE_EXAMPLE = `Deployment of a new feature for the existing website. The feature is developed on a separate git branch.
+
+1. Once the feature is ready, the developer pushes it to the staging site and sends the client a message with a brief description and a verification step list.
+2. Having tested the feature, the client:
+   2a. Confirms everything works as expected.
+   2b. Asks to make some adjustments.
+3. The developer receives the feedback from the client:
+   3a. If adjustments are needed, makes the changes and updates the staging site (see #1).
+   3b. If no changes are needed, merges the git branch into the main branch.
+4. The developer pushes the new functionality to the production site.
+5. The developer removes the git branch.
+6. The developer notifies the client about the successful deployment.
+
+Actors: Client, Developer`;
+
+const GUIDE_STEPS = [
+  { icon: Icons.Edit, title: 'Describe', text: <>Write the process on the <em>Create process</em> tab. <em>Steps</em> sets the min–max number of activities; <em>Estimate time and cost</em> adds KPIs.</> },
+  { icon: Icons.Text, title: 'Read the feedback', text: <>The AI marks what is present and which steps it understood. <em>AI questions</em> are optional; an answer is added as “Clarification: …”.</> },
+  { icon: Icons.Generate, title: 'Create', text: <><em>Create diagram</em> or Ctrl+Enter. Start and end nodes are added; every role gets a swimlane.</> },
+  { icon: Icons.Check, title: 'Check', text: <>The linter marks unreachable steps and dead ends. <em>Match</em> shows how well the diagram covers the description.</> },
+  { icon: Icons.Align, title: 'Edit', text: <>By hand in the toolbar, or with the Copilot on the <em>Manage diagram</em> tab.</> },
+  { icon: Icons.Chart, title: 'Analyse', text: <><em>Statistics</em>: cost and time, resources, AI advice and the match.</> },
+  { icon: Icons.Save, title: 'Save and export', text: <>From <em>More tools</em>: catalog, PNG, JPG, BPMN, XMI, UXF.</> },
+];
+
+const GUIDE_RULES = [
+  { title: 'Name the performer in every step', hint: 'always with the same name, never a pronoun', bad: 'He checks the order.', good: 'The sales clerk checks the order.' },
+  { title: 'One action per step', hint: 'several actions in one step become one box', bad: '3b. Merges the branch, pushes to production and notifies the client.', good: '4. Pushes to production.  5. Removes the branch.  6. Notifies the client.' },
+  { title: 'Letters for alternatives, numbers for sequence', hint: 'every outcome says what happens next', bad: '2. The client tests it and maybe asks for changes.', good: '2a. Confirms everything works.  2b. Asks for adjustments.' },
+  { title: 'Make loops and parallel work explicit', hint: 'say where the process returns', bad: 'Otherwise it is repeated.', good: '…makes the changes and updates the staging site (see #1).' },
+  { title: 'Give the process a clear end', hint: 'the last activity or the expected result', bad: '(the text just stops)', good: '6. The developer notifies the client about the successful deployment.' },
+];
+
+const GUIDE_STATS = [
+  { icon: Icons.KPI, title: 'Cost and time', text: 'Totals, time and cost distribution and an overview of all steps, from the KPIs of the activities.' },
+  { icon: Icons.Users, title: 'Actors and resources', text: 'Roles and the specialists they need; machines, devices, tools, software and materials.' },
+  { icon: Icons.Generate, title: 'AI recommendations', text: 'Steps to remove, redesign (merge, reorder, parallelise) or automate.' },
+  { icon: Icons.Check, title: 'Match with description', text: 'An independent AI (NVIDIA or Gemini) splits the description into requirements: met, partial or missing. Tick them and send a fix to the Copilot.' },
+];
+
+// Mini swimlane diagram of the example (static SVG, colours from the theme)
+function GuideExampleDiagram() {
+  const box = (x, y, w, label, accent) => (
+    <g key={label}>
+      <rect x={x} y={y} width={w} height="36" rx="7" fill="var(--surface)" stroke={accent ? 'var(--accent)' : 'var(--line-3)'} strokeWidth="1.4" />
+      <text x={x + w / 2} y={y + 22} textAnchor="middle" fontSize="10" fill="var(--ink)">{label}</text>
+    </g>
+  );
   return (
-    <div className="p2f-modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="p2f-modal p2f-modal--wide" role="dialog" aria-modal="true" aria-labelledby="p2f-info-title">
-        <h2 id="p2f-info-title" className="p2f-modal__title p2f-modal__title--lg">About the tool and user guide</h2>
+    <svg className="p2f-ug__diagram" viewBox="0 0 760 214" role="img" aria-label="Diagram generated from the example: lanes Client and Developer, a decision after the client's test and a loop back to the staging step">
+      <defs>
+        <marker id="p2f-ug-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--muted)" /></marker>
+      </defs>
+      <rect x="0.5" y="0.5" width="759" height="80" rx="8" fill="var(--surface-2)" stroke="var(--line)" />
+      <rect x="0.5" y="80.5" width="759" height="133" rx="8" fill="var(--surface-2)" stroke="var(--line)" />
+      <text x="16" y="45" fontSize="11" fontWeight="600" fill="var(--ink-2)">Client</text>
+      <text x="16" y="150" fontSize="11" fontWeight="600" fill="var(--ink-2)">Developer</text>
+      <g fill="none" stroke="var(--muted)" strokeWidth="1.3" markerEnd="url(#p2f-ug-arrow)">
+        <path d="M97 118H110" />
+        <path d="M200 118H232V40H243" />
+        <path d="M287 40H370V100" />
+        <path d="M265 62V160" />
+        <path d="M225 178H155V137" />
+        <path d="M410 118H425" /><path d="M505 118H520" /><path d="M600 118H615" /><path d="M695 118H714" />
+      </g>
+      <circle cx="90" cy="118" r="7" fill="var(--ink)" />
+      <circle cx="724" cy="118" r="9" fill="none" stroke="var(--ink)" strokeWidth="1.5" /><circle cx="724" cy="118" r="5" fill="var(--ink)" />
+      <path d="M265 18L287 40L265 62L243 40Z" fill="var(--warn-soft)" stroke="var(--warn)" strokeWidth="1.4" />
+      <text x="300" y="20" fontSize="10" fill="var(--ink-2)">Client confirmed?</text>
+      <text x="318" y="34" fontSize="9" fill="var(--muted)">yes</text>
+      <text x="270" y="94" fontSize="9" fill="var(--muted)">no</text>
+      {box(110, 100, 90, 'Push to staging', true)}
+      {box(225, 160, 100, 'Adjust and update', false)}
+      {box(330, 100, 80, 'Merge branch', false)}
+      {box(425, 100, 80, 'Push to prod', false)}
+      {box(520, 100, 80, 'Remove branch', false)}
+      {box(615, 100, 80, 'Notify client', false)}
+      <text x="160" y="206" fontSize="9" fill="var(--muted)">loop: see #1</text>
+    </svg>
+  );
+}
 
-        <div className="p2f-prose">
-          <p>
-            This tool is for visualising and modelling business processes. Based on your process description, the AI
-            creates a diagram with a number of steps within the range you choose, which you can then edit manually or
-            with the help of AI. You can save process diagrams to the catalog privately or publicly, and you can also
-            find public diagrams created by other people there.
-          </p>
+function GuideStart() {
+  return (
+    <div className="p2f-ug">
+      <p className="p2f-report__lead">Prompt2Flow turns a process description into an editable swimlane diagram. A typical session:</p>
+      <ol className="p2f-ug__steps">
+        {GUIDE_STEPS.map(({ icon, title, text }, index) => (
+          <li key={title} className="p2f-ug__step">
+            <div className="p2f-ug__step-head"><span className="p2f-ug__badge">{icon()}</span><span className="p2f-ug__num">{String(index + 1).padStart(2, '0')}</span></div>
+            <strong>{title}</strong>
+            <p>{text}</p>
+          </li>
+        ))}
+      </ol>
+      <p className="p2f-ug__note">This tool was created as part of a bachelor's thesis. The original author is Timotej Jakubov.</p>
+    </div>
+  );
+}
 
-          <p>
-            This tool was created as part of a bachelor's thesis. The original author is Timotej Jakubov.
-          </p>
+function GuideDescribe() {
+  return (
+    <div className="p2f-ug">
+      <p className="p2f-report__lead">The diagram is only as good as the description. Write it in three parts:</p>
+      <div className="p2f-ug__template">
+        <div className="p2f-ug__part p2f-ug__part--overview"><span>Overview</span>1–3 sentences: what the process is about, what starts it, what its result is.</div>
+        <div className="p2f-ug__part p2f-ug__part--steps"><span>Steps</span>A numbered list; each step says who does what.</div>
+        <div className="p2f-ug__part p2f-ug__part--actors"><span>Actors <i>optional</i></span>The roles, e.g. “Actors: Client, Developer”.</div>
+      </div>
 
-          <h3>Generating and editing with AI</h3>
-          <p>
-            Describe the process in the main window and click Create diagram. To change an existing diagram,
-            switch to the Manage diagram tab, where you will find AI editing as well as tools for working with nodes.
-          </p>
+      <h3 className="p2f-report__h">Five rules</h3>
+      <div className="p2f-ug__rules">
+        {GUIDE_RULES.map((rule, index) => (
+          <div key={rule.title} className="p2f-ug__rule">
+            <div className="p2f-ug__rule-title"><span className="p2f-ug__num">{index + 1}</span><div><strong>{rule.title}</strong><small>{rule.hint}</small></div></div>
+            <div className="p2f-ug__pair">
+              <div className="p2f-ug__bad"><span aria-label="Avoid">✗</span>{rule.bad}</div>
+              <div className="p2f-ug__good"><span aria-label="Better">✓</span>{rule.good}</div>
+            </div>
+          </div>
+        ))}
+      </div>
 
-          <h3>Writing a good process description</h3>
-          <p>Write the description in two parts:</p>
-          <ol>
-            <li><strong>A short overview in your own words</strong> (1–3 sentences) – what the process is about, what starts it and what its result is.</li>
-            <li><strong>A step-by-step description</strong> as a numbered list – each step says who does what, with which documents or systems, and what happens at decisions.</li>
-          </ol>
-          <p>
-            While you type, the AI checks whether both parts are there and goes through your steps one by one: it marks each step
-            it understands and, for an unclear step, says exactly what is missing (for example who performs it or what happens if a
-            condition is not met). It also checks that the triggering event, the responsible roles, the resources and documents used
-            and the expected outcome are described.
-          </p>
-
-          <h3>Basic editing</h3>
-          <p>
-            In the toolbar above the canvas you can add nodes, align them and change their names, roles and KPIs.
-            <br/>
-            To edit a node, first click it to select it. You can then delete the selected node or change its name,
-            role or KPIs (duration and cost).
-            <br/>
-            To edit an edge, click it first; you can then delete it or change its text.
-          </p>
-
-          <h3>Swimlanes</h3>
-          <p>
-            Lanes are generated automatically from the roles assigned to the steps. The system places steps with the
-            same role into a shared lane and optimises the layout. To change a role, select the node and click Role,
-            or click a lane header to rename the whole lane.
-          </p>
-          <h3>Notes</h3>
-          <p>
-            After the page is opened, the first diagram may take a little longer to generate.
-            <br/>
-            When many users are active at the same time you may see a "Too Many Requests" error; in that case AI
-            generation and editing will not work for a few minutes up to an hour.
-            <br/>
-            The password cannot be changed after the account is created.
-          </p>
-        </div>
-
-        <div className="p2f-modal__actions">
-          <button className="p2f-btn p2f-btn--primary" onClick={onClose}>Close</button>
+      <h3 className="p2f-report__h">Example</h3>
+      <div className="p2f-ug__example-grid">
+        <pre className="p2f-ug__example">{GUIDE_EXAMPLE}</pre>
+        <div className="p2f-ug__result">
+          <div className="p2f-ug__caption">What the AI draws from it</div>
+          <GuideExampleDiagram />
+          <p>Two swimlanes, a decision after the client’s test, a loop back to step 1 and a separate box for each of steps 3b–6. Written as one sentence, steps 3b–6 would become one box.</p>
         </div>
       </div>
+
+      <div className="p2f-ug__callout">
+        <strong>Roles.</strong> The <em>Actors</em> line is optional. It fixes the role names, so each role becomes one swimlane. Add it when a step does not name its performer or a role is called in different ways – roles that are not in the description are removed, and a step without a role ends up in the <em>No role</em> lane.
+      </div>
+
+      <h3 className="p2f-report__h">What the AI checks while you type</h3>
+      <div className="p2f-ug__chips">
+        {['Short overview', 'Step-by-step description', 'Triggering event', 'Responsible roles', 'Decision outcomes', 'Expected outcome'].map((label) => <span key={label} className="p2f-ug__chip"><Icons.Check />{label}</span>)}
+      </div>
+      <p className="p2f-ug__muted">Each step is marked as understood, or the AI says what is missing – for example, who performs it or what happens if a condition is not met.</p>
+    </div>
+  );
+}
+
+function GuideEdit() {
+  return (
+    <div className="p2f-ug">
+      <h3 className="p2f-report__h">By hand</h3>
+      <div className="p2f-ug__cards p2f-ug__cards--3">
+        <div className="p2f-ug__card"><span className="p2f-ug__badge"><Icons.Edit /></span><strong>Select and change</strong><p>Click a node or an edge, then rename it, change its role or KPIs, or delete it in the toolbar.</p></div>
+        <div className="p2f-ug__card"><span className="p2f-ug__badge"><Icons.Users /></span><strong>Rename a lane</strong><p>Click a swimlane header to rename the role for all its steps.</p></div>
+        <div className="p2f-ug__card"><span className="p2f-ug__badge"><Icons.Undo /></span><strong>Undo / redo</strong><p>Ctrl+Z and Ctrl+Y – also after a Copilot edit. Parallel branches come from the description or the Copilot.</p></div>
+      </div>
+
+      <h3 className="p2f-report__h">With the Copilot</h3>
+      <p className="p2f-ug__muted">On the <em>Manage diagram</em> tab, write the change and click <em>Apply changes</em>. A good instruction has these parts:</p>
+      <div className="p2f-ug__anatomy">
+        <span className="p2f-ug__seg p2f-ug__seg--where">After ‘Remove git branch’,<small>where – an existing step, in quotes</small></span>
+        <span className="p2f-ug__seg p2f-ug__seg--what">add ‘Run smoke tests’<small>what – add, remove, rename, move, connect</small></span>
+        <span className="p2f-ug__seg p2f-ug__seg--role">(actor: Developer)<small>who – the role of a new step</small></span>
+        <span className="p2f-ug__seg p2f-ug__seg--link">and connect it to ‘Notify client of deployment’.<small>connection – how the flow continues</small></span>
+      </div>
+      <p className="p2f-ug__muted">For a new decision, say where each branch leads, e.g. “add a decision ‘Tests passed?’: yes → ‘Notify client’, no → ‘Make adjustments’”. Several changes can go into one instruction – number them. Before applying, the AI checks these parts, verifies that the steps exist, and may ask a question; the answer is added to the instruction.</p>
+    </div>
+  );
+}
+
+function GuideStats() {
+  return (
+    <div className="p2f-ug">
+      <p className="p2f-report__lead"><em>Statistics</em> opens a report with four chapters. AI chapters load when opened and can be reloaded after the diagram changes.</p>
+      <div className="p2f-ug__cards p2f-ug__cards--2">
+        {GUIDE_STATS.map(({ icon, title, text }, index) => (
+          <div key={title} className="p2f-ug__card">
+            <div className="p2f-ug__step-head"><span className="p2f-ug__badge">{icon()}</span><span className="p2f-ug__num">{String(index + 1).padStart(2, '0')}</span></div>
+            <strong>{title}</strong><p>{text}</p>
+          </div>
+        ))}
+      </div>
+      <div className="p2f-ug__callout">The match score is only as reliable as the description: a vague description gives vague requirements.</div>
+    </div>
+  );
+}
+
+function GuideSave() {
+  return (
+    <div className="p2f-ug">
+      <div className="p2f-ug__cards p2f-ug__cards--3">
+        <div className="p2f-ug__card"><span className="p2f-ug__badge"><Icons.Save /></span><strong>Save diagram</strong><p>Stores the diagram in the catalog, privately or publicly. Requires signing in.</p></div>
+        <div className="p2f-ug__card"><span className="p2f-ug__badge"><Icons.Folder /></span><strong>Open catalog</strong><p>Your diagrams and public diagrams of other users – load any of them and edit it.</p></div>
+        <div className="p2f-ug__card"><span className="p2f-ug__badge"><Icons.Download /></span><strong>Export</strong><p>PNG, JPG, BPMN 2.0, UML XMI or UMLet UXF. Save the diagram first.</p></div>
+      </div>
+      <h3 className="p2f-report__h">Notes</h3>
+      <ul className="p2f-ug__list">
+        <li>After the page is opened, the first diagram may take a little longer to generate.</li>
+        <li>When many users are active at the same time, you may see a “Too Many Requests” error; AI features then pause for a few minutes up to an hour.</li>
+        <li>The password cannot be changed after the account is created.</li>
+      </ul>
+    </div>
+  );
+}
+
+function InfoModal({ onClose }) {
+  const [chapter, setChapter] = useState('start');
+  useEffect(() => {
+    const onKey = (event) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div role="presentation" className="p2f-overlay p2f-overlay--top" onClick={onClose}>
+      <section className="p2f-dialog p2f-report p2f-report--guide" role="dialog" aria-modal="true" aria-labelledby="p2f-info-title" onClick={(event) => event.stopPropagation()}>
+        <header className="p2f-report__head">
+          <div className="p2f-spacer">
+            <h2 id="p2f-info-title" className="p2f-report__title">User guide</h2>
+            <div className="p2f-dialog__sub">How to use Prompt2Flow and how to write prompts for it</div>
+          </div>
+          <button type="button" className="p2f-icon-btn" onClick={onClose} aria-label="Close user guide">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </header>
+        <nav className="p2f-chapters p2f-chapters--5" role="tablist" aria-label="User guide chapters">
+          {GUIDE_CHAPTERS.map((item, index) => <button key={item.key} type="button" role="tab" aria-selected={chapter === item.key} className="p2f-chapter" onClick={() => setChapter(item.key)}>
+            <span className="p2f-chapter__num">{String(index + 1).padStart(2, '0')}</span>
+            <span className="p2f-chapter__text">
+              <span className="p2f-chapter__title">{item.title}</span>
+              <span className="p2f-chapter__sub">{item.sub}</span>
+            </span>
+          </button>)}
+        </nav>
+        <div key={chapter} className="p2f-report__body" role="tabpanel">
+          {chapter === 'start' && <GuideStart />}
+          {chapter === 'describe' && <GuideDescribe />}
+          {chapter === 'edit' && <GuideEdit />}
+          {chapter === 'stats' && <GuideStats />}
+          {chapter === 'save' && <GuideSave />}
+        </div>
+      </section>
     </div>
   );
 }
@@ -629,7 +811,6 @@ function App() {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState(null);
-  const [nextId, setNextId] = useState(1);
   const [showActors, setShowActors] = useState(true);
   const [promptText, setPromptText] = useState('');
   const [promptReview, setPromptReview] = useState(null);
@@ -1279,7 +1460,7 @@ function App() {
       setNodes(laid); setEdges(laidEdges);
       histRef.current = []; histIdxRef.current = -1;
       saveHistory(laid, laidEdges);
-      setSelectedNodeId(null); setSelectedEdgeId(null); setNextId(1);
+      setSelectedNodeId(null); setSelectedEdgeId(null);
       const laidTasks = laid.filter((n) => n.type !== 'swimlane');
       const generatedModel = serializeModel(laidTasks, laidEdges);
       resetDiagramInsights();
@@ -2074,20 +2255,6 @@ function App() {
       .catch(() => modalAlert('Export failed. Check the console.', 'Error'));
   };
 
-  const addNode = (nodeType = 'task') => {
-    const id = `new-${nextId}`; setNextId((n) => n + 1);
-    const baseLabel = nodeType === 'fork' ? 'Fork' : nodeType === 'join' ? 'Join' : `Step ${nextId}`;
-    const label = nodeType === 'task' ? makeLabel(baseLabel, '', showActors) : baseLabel;
-    const newNode = { id, type: 'task', data: { label, baseLabel, actor: '', nodeType, isDecision: false }, position: { x: 0, y: 0 } };
-    // The first step in an empty diagram automatically gets a process start and end
-    const base = taskNodes.length
-      ? { nodes: [...stripLaneProps(nodes), newNode], edges }
-      : withStartEnd([newNode], [], edgeOptions);
-    const { nodes: laid, edges: laidEdges } = buildSwimLaneLayout(base.nodes, base.edges);
-    setNodes(laid); setEdges(laidEdges);
-    saveHistory(laid, laidEdges);
-  };
-
 
   // instructionOverride: a prompt built elsewhere (e.g. the fix list in "Match with description") instead of the composer text
   const editDiagramWithAI = async (instructionOverride) => {
@@ -2334,9 +2501,6 @@ function App() {
   const isEventSelected = isEventNode(taskNodes.find((n) => n.id === selectedNodeId));
   const isBarSelected = isBarNode(taskNodes.find((n) => n.id === selectedNodeId));
   const managementActions = [
-    { label: 'Add node', short: 'Add', icon: Icons.Add, onClick: () => addNode('task'), group: 'diagram' },
-    { label: 'Add fork (split into parallel branches)', short: 'Fork', icon: Icons.Fork, onClick: () => addNode('fork'), group: 'diagram' },
-    { label: 'Add join (wait for all parallel branches)', short: 'Join', icon: Icons.Join, onClick: () => addNode('join'), group: 'diagram' },
     { label: 'Align', short: 'Align', icon: Icons.Align, onClick: onLayout, group: 'diagram' },
     { label: 'Rename node', short: 'Rename', icon: Icons.Edit, onClick: renameSelectedNode, disabled: !selectedNodeId, group: 'node' },
     { label: 'Change role', short: 'Role', icon: Icons.User, onClick: changeActorSelected, disabled: !selectedNodeId || isEventSelected, group: 'node' },
