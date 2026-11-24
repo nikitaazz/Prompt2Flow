@@ -1,0 +1,104 @@
+{
+  "nodes": [
+    {
+      "id": "start",
+      "type": "startEvent",
+      "label": "Feature ready",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "pushStaging",
+      "type": "task",
+      "label": "Push to staging and notify client",
+      "actor": "Developer",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "clientTest",
+      "type": "task",
+      "label": "Client tests feature",
+      "actor": "Client",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "gwConfirm",
+      "type": "gateway",
+      "label": "Feature works?",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "makeChanges",
+      "type": "task",
+      "label": "Make changes and update staging",
+      "actor": "Developer",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "mergeDeploy",
+      "type": "task",
+      "label": "Merge to main, deploy to production, remove branch, notify client",
+      "actor": "Developer",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "end",
+      "type": "endEvent",
+      "label": "Feature deployed",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "start",
+      "target": "pushStaging",
+      "label": null
+    },
+    {
+      "id": "e2",
+      "source": "pushStaging",
+      "target": "clientTest",
+      "label": null
+    },
+    {
+      "id": "e3",
+      "source": "clientTest",
+      "target": "gwConfirm",
+      "label": null
+    },
+    {
+      "id": "e4",
+      "source": "gwConfirm",
+      "target": "mergeDeploy",
+      "label": "Yes"
+    },
+    {
+      "id": "e5",
+      "source": "gwConfirm",
+      "target": "makeChanges",
+      "label": "No"
+    },
+    {
+      "id": "e6",
+      "source": "makeChanges",
+      "target": "pushStaging",
+      "label": null
+    },
+    {
+      "id": "e7",
+      "source": "mergeDeploy",
+      "target": "end",
+      "label": null
+    }
+  ]
+}

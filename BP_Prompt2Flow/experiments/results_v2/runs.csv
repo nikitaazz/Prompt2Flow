@@ -1,0 +1,61 @@
+case,variant,requested_evaluator,evaluator,run,score,requirements,total_weight,met,partial,missing,cat_step,cat_actor,cat_decision,cat_order,cat_outcome,error
+feature_deployment,full,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),1,76,15,39,11,1,3,75,83,50,,100,
+feature_deployment,full,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),2,76,15,39,11,1,3,75,83,50,,100,
+feature_deployment,full,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),3,76,15,39,11,1,3,75,83,50,,100,
+feature_deployment,minus_step,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),1,51,15,39,8,0,7,50,67,50,,0,
+feature_deployment,minus_step,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),2,55,15,39,8,1,6,58,67,50,,0,
+feature_deployment,minus_step,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),3,59,15,39,9,0,6,67,67,50,,0,
+shuffled_order,full,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),1,91,12,32,11,0,1,83,,100,100,100,
+shuffled_order,full,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),2,91,12,32,11,0,1,83,,100,100,100,
+shuffled_order,full,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),3,91,12,32,11,0,1,83,,100,100,100,
+shuffled_order,minus_step,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),1,86,12,32,10,1,1,75,,100,100,100,
+shuffled_order,minus_step,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),2,86,12,32,10,1,1,75,,100,100,100,
+shuffled_order,minus_step,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),3,86,12,32,10,1,1,75,,100,100,100,
+apricot_pies,full,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),1,88,19,50,16,1,2,93,,,25,100,
+apricot_pies,full,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),2,88,19,50,16,1,2,93,,,25,100,
+apricot_pies,full,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),3,88,19,50,16,1,2,93,,,25,100,
+apricot_pies,minus_step,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),1,84,19,50,15,2,2,86,,,50,100,
+apricot_pies,minus_step,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),2,81,19,50,14,3,2,83,,,50,100,
+apricot_pies,minus_step,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),3,79,19,50,14,2,3,83,,,25,100,
+trench_digging,full,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),1,73,12,33,9,0,3,83,,0,67,100,
+trench_digging,full,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),2,68,12,33,8,1,3,75,,0,67,100,
+trench_digging,full,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),3,64,12,33,7,2,3,67,,0,67,100,
+trench_digging,minus_step,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),1,50,12,33,6,1,5,58,,0,33,100,
+trench_digging,minus_step,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),2,50,12,33,6,1,5,58,,0,33,100,
+trench_digging,minus_step,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),3,50,12,33,6,1,5,58,,0,33,100,
+egg_frying,full,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),1,97,12,31,11,1,0,100,,100,50,100,
+egg_frying,full,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),2,97,12,31,11,1,0,100,,100,50,100,
+egg_frying,full,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),3,97,12,31,11,1,0,100,,100,50,100,
+egg_frying,minus_step,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),1,87,12,31,10,1,1,100,,50,50,100,
+egg_frying,minus_step,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),2,87,12,31,10,1,1,100,,50,50,100,
+egg_frying,minus_step,nvidia,NVIDIA (nvidia/nemotron-3-ultra-550b-a55b),3,87,12,31,10,1,1,100,,50,50,100,
+feature_deployment,full,gemini,Gemini (gemini-3.5-flash),1,81,8,21,6,1,1,93,,100,,0,
+feature_deployment,full,gemini,Gemini (gemini-3.1-flash-lite),2,95,8,21,7,1,0,93,,100,,100,
+feature_deployment,full,gemini,Gemini (gemini-3.1-flash-lite),3,95,8,21,7,1,0,93,,100,,100,
+feature_deployment,minus_step,gemini,Gemini (gemini-3.1-flash-lite),1,62,8,21,5,0,3,67,,100,,0,
+feature_deployment,minus_step,gemini,Gemini (gemini-3.1-flash-lite),2,62,8,21,5,0,3,67,,100,,0,
+feature_deployment,minus_step,gemini,Gemini (gemini-3.1-flash-lite),3,62,8,21,5,0,3,67,,100,,0,
+apricot_pies,full,gemini,Gemini (gemini-3.1-flash-lite),1,66,12,31,7,3,2,61,,,100,,
+apricot_pies,full,gemini,Gemini (gemini-3.1-flash-lite),2,66,12,31,7,3,2,61,,,100,,
+apricot_pies,full,gemini,,3,,,,,,,,,,,,"/evaluate-model returned 503: {""detail"":""Gemini API is unavailable: {\n  \""error\"": {\n    \""code\"": 503,\n    \""message\"": \""This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.\"",\n    \""status\"": \""UNAVAILABLE\""\n  }\n}\n""}"
+apricot_pies,minus_step,gemini,,1,,,,,,,,,,,,"/evaluate-model returned 503: {""detail"":""Gemini API is unavailable: {\n  \""error\"": {\n    \""code\"": 503,\n    \""message\"": \""This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.\"",\n    \""status\"": \""UNAVAILABLE\""\n  }\n}\n""}"
+apricot_pies,minus_step,gemini,,2,,,,,,,,,,,,"/evaluate-model returned 503: {""detail"":""Gemini API is unavailable: {\n  \""error\"": {\n    \""code\"": 503,\n    \""message\"": \""This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.\"",\n    \""status\"": \""UNAVAILABLE\""\n  }\n}\n""}"
+apricot_pies,minus_step,gemini,Gemini (gemini-3.1-flash-lite),3,56,12,31,5,5,2,50,,,100,,
+trench_digging,full,gemini,,1,,,,,,,,,,,,"/evaluate-model returned 503: {""detail"":""Gemini API is unavailable: {\n  \""error\"": {\n    \""code\"": 503,\n    \""message\"": \""This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.\"",\n    \""status\"": \""UNAVAILABLE\""\n  }\n}\n""}"
+trench_digging,full,gemini,Gemini (gemini-3.1-flash-lite),2,85,8,20,7,0,1,100,,0,100,100,
+trench_digging,full,gemini,Gemini (gemini-3.1-flash-lite),3,85,8,20,7,0,1,100,,0,100,100,
+trench_digging,minus_step,gemini,Gemini (gemini-3.1-flash-lite),1,70,8,20,6,0,2,77,,0,100,100,
+trench_digging,minus_step,gemini,,2,,,,,,,,,,,,"/evaluate-model returned 503: {""detail"":""Gemini API is unavailable: {\n  \""error\"": {\n    \""code\"": 503,\n    \""message\"": \""This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.\"",\n    \""status\"": \""UNAVAILABLE\""\n  }\n}\n""}"
+trench_digging,minus_step,gemini,Gemini (gemini-3.1-flash-lite),3,70,8,20,6,0,2,77,,0,100,100,
+egg_frying,full,gemini,,1,,,,,,,,,,,,"/evaluate-model returned 503: {""detail"":""Gemini API is unavailable: {\n  \""error\"": {\n    \""code\"": 503,\n    \""message\"": \""This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.\"",\n    \""status\"": \""UNAVAILABLE\""\n  }\n}\n""}"
+egg_frying,full,gemini,,2,,,,,,,,,,,,"/evaluate-model returned 503: {""detail"":""Gemini API is unavailable: {\n  \""error\"": {\n    \""code\"": 503,\n    \""message\"": \""This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.\"",\n    \""status\"": \""UNAVAILABLE\""\n  }\n}\n""}"
+egg_frying,full,gemini,,3,,,,,,,,,,,,"/evaluate-model returned 503: {""detail"":""Gemini API is unavailable: {\n  \""error\"": {\n    \""code\"": 503,\n    \""message\"": \""This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.\"",\n    \""status\"": \""UNAVAILABLE\""\n  }\n}\n""}"
+egg_frying,minus_step,gemini,Gemini (gemini-3.1-flash-lite),1,100,8,21,8,0,0,100,,100,100,,
+egg_frying,minus_step,gemini,Gemini (gemini-3.5-flash-lite),2,100,8,21,8,0,0,100,,100,100,,
+egg_frying,minus_step,gemini,,3,,,,,,,,,,,,"/evaluate-model returned 503: {""detail"":""Gemini API is unavailable: {\n  \""error\"": {\n    \""code\"": 503,\n    \""message\"": \""This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.\"",\n    \""status\"": \""UNAVAILABLE\""\n  }\n}\n""}"
+shuffled_order,full,gemini,Gemini (gemini-3.1-flash-lite),1,100,11,31,11,0,0,100,,,100,100,
+shuffled_order,full,gemini,Gemini (gemini-3.1-flash-lite),2,100,11,31,11,0,0,100,,,100,100,
+shuffled_order,full,gemini,,3,,,,,,,,,,,,"/evaluate-model returned 503: {""detail"":""Gemini API is unavailable: {\n  \""error\"": {\n    \""code\"": 503,\n    \""message\"": \""This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.\"",\n    \""status\"": \""UNAVAILABLE\""\n  }\n}\n""}"
+shuffled_order,minus_step,gemini,,1,,,,,,,,,,,,"/evaluate-model returned 503: {""detail"":""Gemini API is unavailable: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))""}"
+shuffled_order,minus_step,gemini,,2,,,,,,,,,,,,"/evaluate-model returned 503: {""detail"":""Gemini API is unavailable: HTTPSConnectionPool(host='generativelanguage.googleapis.com', port=443): Max retries exceeded with url: /v1beta/models/gemini-3.1-flash-lite:generateContent (Ca""}"
+shuffled_order,minus_step,gemini,,3,,,,,,,,,,,,"/evaluate-model returned 503: {""detail"":""Gemini API is unavailable: HTTPSConnectionPool(host='generativelanguage.googleapis.com', port=443): Max retries exceeded with url: /v1beta/models/gemini-3.1-flash-lite:generateContent (Ca""}"

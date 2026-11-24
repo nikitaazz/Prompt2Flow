@@ -1,0 +1,140 @@
+{
+  "nodes": [
+    {
+      "id": "start",
+      "type": "startEvent",
+      "label": "Order received",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "gw_stock",
+      "type": "gateway",
+      "label": "All items in stock?",
+      "actor": "Warehouse clerk",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t_inform_cancel",
+      "type": "task",
+      "label": "Inform customer and cancel order",
+      "actor": "Warehouse clerk",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "end_cancel",
+      "type": "endEvent",
+      "label": "Order cancelled",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t_confirm_payment",
+      "type": "task",
+      "label": "Confirm payment",
+      "actor": "Accountant",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t_pack",
+      "type": "task",
+      "label": "Pack items",
+      "actor": "Warehouse clerk",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t_print_label",
+      "type": "task",
+      "label": "Print shipping label",
+      "actor": "Warehouse clerk",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t_give_package",
+      "type": "task",
+      "label": "Give package to courier",
+      "actor": "Warehouse clerk",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t_deliver",
+      "type": "task",
+      "label": "Deliver package and obtain signature",
+      "actor": "Courier",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "end_success",
+      "type": "endEvent",
+      "label": "Delivery completed",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "start",
+      "target": "gw_stock",
+      "label": null
+    },
+    {
+      "id": "e2",
+      "source": "gw_stock",
+      "target": "t_confirm_payment",
+      "label": "Yes"
+    },
+    {
+      "id": "e3",
+      "source": "gw_stock",
+      "target": "t_inform_cancel",
+      "label": "No"
+    },
+    {
+      "id": "e4",
+      "source": "t_inform_cancel",
+      "target": "end_cancel",
+      "label": null
+    },
+    {
+      "id": "e5",
+      "source": "t_confirm_payment",
+      "target": "t_pack",
+      "label": null
+    },
+    {
+      "id": "e6",
+      "source": "t_pack",
+      "target": "t_print_label",
+      "label": null
+    },
+    {
+      "id": "e7",
+      "source": "t_print_label",
+      "target": "t_give_package",
+      "label": null
+    },
+    {
+      "id": "e8",
+      "source": "t_give_package",
+      "target": "t_deliver",
+      "label": null
+    },
+    {
+      "id": "e9",
+      "source": "t_deliver",
+      "target": "end_success",
+      "label": null
+    }
+  ]
+}

@@ -1,0 +1,132 @@
+{
+  "nodes": [
+    {
+      "id": "start",
+      "type": "startEvent",
+      "label": "Cook decides to prepare a fried egg",
+      "actor": "Cook",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t1",
+      "type": "task",
+      "label": "Take a frying pan (non-stick or regular)",
+      "actor": "Cook",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "gw1",
+      "type": "gateway",
+      "label": "Is pan cast iron?",
+      "actor": "Cook",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t2",
+      "type": "task",
+      "label": "Add a drop of oil",
+      "actor": "Cook",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t3",
+      "type": "task",
+      "label": "Put the pan on the stove and wait until it heats up",
+      "actor": "Cook",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t4",
+      "type": "task",
+      "label": "Crack an egg into the pan without dropping the shell",
+      "actor": "Cook",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t5",
+      "type": "task",
+      "label": "Add salt and pepper to taste, then cover the pan with a lid",
+      "actor": "Cook",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t6",
+      "type": "task",
+      "label": "Wait a couple of minutes, turn off the heat, and scrape the egg off the pan",
+      "actor": "Cook",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "end",
+      "type": "endEvent",
+      "label": "Cooked fried egg ready to serve",
+      "actor": "Cook",
+      "duration_minutes": null,
+      "cost_euros": null
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "start",
+      "target": "t1",
+      "label": null
+    },
+    {
+      "id": "e2",
+      "source": "t1",
+      "target": "gw1",
+      "label": null
+    },
+    {
+      "id": "e3",
+      "source": "gw1",
+      "target": "t2",
+      "label": "Yes"
+    },
+    {
+      "id": "e4",
+      "source": "gw1",
+      "target": "t3",
+      "label": "No"
+    },
+    {
+      "id": "e5",
+      "source": "t2",
+      "target": "t3",
+      "label": null
+    },
+    {
+      "id": "e6",
+      "source": "t3",
+      "target": "t4",
+      "label": null
+    },
+    {
+      "id": "e7",
+      "source": "t4",
+      "target": "t5",
+      "label": null
+    },
+    {
+      "id": "e8",
+      "source": "t5",
+      "target": "t6",
+      "label": null
+    },
+    {
+      "id": "e9",
+      "source": "t6",
+      "target": "end",
+      "label": null
+    }
+  ]
+}

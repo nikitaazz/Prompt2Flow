@@ -1,0 +1,166 @@
+{
+  "nodes": [
+    {
+      "id": "start",
+      "type": "startEvent",
+      "label": "Start cooking",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t1",
+      "type": "task",
+      "label": "Take frying pan",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "gw1",
+      "type": "gateway",
+      "label": "Is pan cast iron?",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t2",
+      "type": "task",
+      "label": "Add drop of oil",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "gw2",
+      "type": "gateway",
+      "label": "Is pan non-stick?",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t3",
+      "type": "task",
+      "label": "Add plenty of oil",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t4",
+      "type": "task",
+      "label": "Heat pan on stove",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t5",
+      "type": "task",
+      "label": "Crack egg into pan",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t6",
+      "type": "task",
+      "label": "Season with salt and pepper and cover with lid",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t7",
+      "type": "task",
+      "label": "Wait, turn off heat, and scrape egg",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "end",
+      "type": "endEvent",
+      "label": "Egg ready",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "start",
+      "target": "t1",
+      "label": null
+    },
+    {
+      "id": "e2",
+      "source": "t1",
+      "target": "gw1",
+      "label": null
+    },
+    {
+      "id": "e3",
+      "source": "gw1",
+      "target": "t2",
+      "label": "Yes"
+    },
+    {
+      "id": "e4",
+      "source": "t2",
+      "target": "gw2",
+      "label": null
+    },
+    {
+      "id": "e5",
+      "source": "gw1",
+      "target": "gw2",
+      "label": "No"
+    },
+    {
+      "id": "e6",
+      "source": "gw2",
+      "target": "t4",
+      "label": "Yes"
+    },
+    {
+      "id": "e7",
+      "source": "gw2",
+      "target": "t3",
+      "label": "No"
+    },
+    {
+      "id": "e8",
+      "source": "t3",
+      "target": "t4",
+      "label": null
+    },
+    {
+      "id": "e9",
+      "source": "t4",
+      "target": "t5",
+      "label": null
+    },
+    {
+      "id": "e10",
+      "source": "t5",
+      "target": "t6",
+      "label": null
+    },
+    {
+      "id": "e11",
+      "source": "t6",
+      "target": "t7",
+      "label": null
+    },
+    {
+      "id": "e12",
+      "source": "t7",
+      "target": "end",
+      "label": null
+    }
+  ]
+}

@@ -14,5 +14,9 @@
   {
     "id": "egg_frying",
     "description": "First, take a frying pan, either non-stick or regular. If it is made of cast iron, add a drop of oil. If it does not have a non-stick coating, use plenty of oil. Put the pan on the stove and wait until it heats up. Crack an egg into the pan without dropping the shell in. Add salt and pepper to taste, then cover the pan with a lid. Wait a couple of minutes, turn off the heat, and scrape the egg off the pan."
+  },
+  {
+    "id": "shuffled_order",
+    "description": "The courier hands the package to the customer and gets a signature, that is how it ends. Before anything is packed, the warehouse clerk checks whether all ordered items are in stock. If something is missing, the clerk informs the customer and the order is cancelled. Our online shop receives an order from a customer. The clerk packs the items only after the payment has been confirmed by the accountant. Once the package is packed, the clerk prints the shipping label and gives the package to the courier. Oh and the accountant confirms the payment after the stock check, not earlier."
   }
 ]

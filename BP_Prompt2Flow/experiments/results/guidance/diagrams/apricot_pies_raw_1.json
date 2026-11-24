@@ -1,0 +1,210 @@
+{
+  "nodes": [
+    {
+      "id": "start",
+      "type": "startEvent",
+      "label": "Start cooking process",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t1",
+      "type": "task",
+      "label": "Gather tools and ingredients",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t2",
+      "type": "task",
+      "label": "Add eggs, sugar and vanilla",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t3",
+      "type": "task",
+      "label": "Heat milk partially and mix",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t4",
+      "type": "task",
+      "label": "Prepare milk-yeast mixture",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t5",
+      "type": "task",
+      "label": "Add milk-yeast mixture and salt",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t6",
+      "type": "task",
+      "label": "Measure, sift and mix flour",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t7",
+      "type": "task",
+      "label": "Add butter and knead dough",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t8",
+      "type": "task",
+      "label": "Cover dough and let rise",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t9",
+      "type": "task",
+      "label": "Prepare apricots",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t10",
+      "type": "task",
+      "label": "Portion dough, fill with apricot and sugar, shape and place on tray",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t11",
+      "type": "task",
+      "label": "Prepare baking tray and preheat oven",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t12",
+      "type": "task",
+      "label": "Brush pies with egg yolk",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t13",
+      "type": "task",
+      "label": "Bake pies",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "end",
+      "type": "endEvent",
+      "label": "Finished pies",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "start",
+      "target": "t1",
+      "label": null
+    },
+    {
+      "id": "e2",
+      "source": "t1",
+      "target": "t2",
+      "label": null
+    },
+    {
+      "id": "e3",
+      "source": "t2",
+      "target": "t3",
+      "label": null
+    },
+    {
+      "id": "e4",
+      "source": "t3",
+      "target": "t4",
+      "label": null
+    },
+    {
+      "id": "e5",
+      "source": "t4",
+      "target": "t5",
+      "label": null
+    },
+    {
+      "id": "e6",
+      "source": "t5",
+      "target": "t6",
+      "label": null
+    },
+    {
+      "id": "e7",
+      "source": "t6",
+      "target": "t7",
+      "label": null
+    },
+    {
+      "id": "e8",
+      "source": "t7",
+      "target": "t8",
+      "label": null
+    },
+    {
+      "id": "e9",
+      "source": "t8",
+      "target": "t9",
+      "label": null
+    },
+    {
+      "id": "e10",
+      "source": "t9",
+      "target": "t10",
+      "label": null
+    },
+    {
+      "id": "e11",
+      "source": "t10",
+      "target": "t11",
+      "label": null
+    },
+    {
+      "id": "e12",
+      "source": "t11",
+      "target": "t12",
+      "label": null
+    },
+    {
+      "id": "e13",
+      "source": "t12",
+      "target": "t13",
+      "label": null
+    },
+    {
+      "id": "e14",
+      "source": "t13",
+      "target": "end",
+      "label": null
+    }
+  ]
+}

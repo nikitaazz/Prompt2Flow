@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 import os
 import sys
 import json
+import hashlib
+from concurrent.futures import ThreadPoolExecutor
 import re
 import time
 import threading
@@ -191,14 +193,28 @@ class DiagramAccuracyRequest(BaseModel):
     description: str = Field(..., min_length=1, max_length=12000)
     model: dict
     evaluator: Literal["gemini", "nvidia"] = "nvidia"
+    # True: the requirements of a description are extracted once and reused (stable denominator);
+    # False: they are extracted again on every evaluation (for experiments)
+    fixed_requirements: bool = True
 
 
 class AccuracyRequirement(BaseModel):
+    id: str = ""
     text: str
     category: str = "step"
     importance: int = Field(2, ge=1, le=3)
     status: Literal["met", "partial", "missing"] = "missing"
     evidence: str = ""
+    quote: str = ""
+    step_refs: List[int] = []
+    check: str = ""  # what the code check changed, if anything
+    ignored: bool = False
+
+
+class RequirementIgnoreRequest(BaseModel):
+    requirement_set: str = Field(..., min_length=1, max_length=128)
+    requirement_id: str = Field(..., min_length=1, max_length=32)
+    ignored: bool = True
 
 
 class DiagramAccuracyResponse(BaseModel):
@@ -211,6 +227,7 @@ class DiagramAccuracyResponse(BaseModel):
     requirements: List[AccuracyRequirement] = []
     category_scores: Dict[str, int] = {}
     evaluator: str = ""
+    requirement_set: str = ""  # id of the cached requirement list (used to ignore a requirement)
 
 
 class ProcessResourcesRequest(BaseModel):
@@ -386,6 +403,17 @@ def init_db():
             print("✅ Migration: column 'category' added")
         except sqlite3.OperationalError:
             pass
+
+    # Requirements extracted from a description, reused by every evaluation of that description
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS requirement_sets (
+        set_id TEXT PRIMARY KEY,
+        evaluator TEXT NOT NULL,
+        requirements_json TEXT NOT NULL,
+        ignored_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )
+    """)
 
     # Rename categories saved under their former Slovak names
     for legacy_name, english_name in LEGACY_CATEGORY_NAMES.items():
@@ -755,6 +783,8 @@ def gemini_generate(system_prompt: str, user_prompt: str, max_tokens: int = 3000
             return text
         text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text)
         result = json.loads(text)
+        if isinstance(result, list) and all(isinstance(item, dict) for item in result):
+            result = {"_items": result}  # Gemini sometimes returns only the array of the requested object
         if not isinstance(result, dict):
             raise ValueError("Gemini did not return a JSON object")
         return result
@@ -840,8 +870,14 @@ DIAGRAM JSON:
 FLOW OUTLINE:
 {outline}
 """
-    return EVALUATORS[evaluator]("You translate process diagrams into faithful plain-text process descriptions.",
-                                 prompt, max_tokens=2000, as_json=False)
+    # Reasoning models spend part of the budget on thinking, so 2000 tokens cut off longer diagrams
+    system_prompt = "You translate process diagrams into faithful plain-text process descriptions."
+    try:
+        return EVALUATORS[evaluator](system_prompt, prompt, max_tokens=5000, as_json=False)
+    except HTTPException as exc:
+        if exc.status_code != 502:
+            raise
+        return EVALUATORS[evaluator](system_prompt, prompt, max_tokens=5000, as_json=False)
 
 
 EVENT_NODE_TYPES = {"startEvent", "endEvent"}
@@ -849,8 +885,9 @@ PARALLEL_NODE_TYPES = {"fork", "join"}  # UML fork / join nodes (BPMN parallel g
 CONTROL_NODE_TYPES = EVENT_NODE_TYPES | PARALLEL_NODE_TYPES
 
 
-def describe_process_model(model: dict) -> str:
-    """Deterministic text description of the diagram: steps in flow order, roles and branches with conditions."""
+def process_flow(model: dict):
+    """Nodes by id, outgoing edges (target, label), flow order (BFS from start) and step numbers of the work nodes.
+    The step numbers are the ones used in describe_process_model."""
     nodes = [n for n in (model.get("nodes") or []) if isinstance(n, dict) and n.get("id") is not None]
     edges = [e for e in (model.get("edges") or []) if isinstance(e, dict)]
     by_id = {str(n["id"]): n for n in nodes}
@@ -878,6 +915,12 @@ def describe_process_model(model: dict) -> str:
     for nid in order:
         if by_id[nid].get("type") not in CONTROL_NODE_TYPES:
             numbers[nid] = len(numbers) + 1
+    return by_id, outgoing, order, numbers
+
+
+def describe_process_model(model: dict) -> str:
+    """Deterministic text description of the diagram: steps in flow order, roles and branches with conditions."""
+    by_id, outgoing, order, numbers = process_flow(model)
 
     def name(nid: str) -> str:
         node_type = by_id[nid].get("type")
@@ -916,98 +959,324 @@ def _ascii(text: str) -> str:
 
 
 ACCURACY_STATUS_SCORE = {"met": 1.0, "partial": 0.5, "missing": 0.0}
+ACCURACY_STATUS_RANK = {"missing": 0, "partial": 1, "met": 2}
 ACCURACY_CATEGORIES = {"step", "actor", "decision", "order", "outcome"}
+# How many times the judge evaluates in parallel (median verdict). Gemini at temperature 0 is already stable.
+JUDGE_VOTES = {"nvidia": 3, "gemini": 1, "groq": 1}
 
 
-@app.post("/evaluate-model", response_model=DiagramAccuracyResponse)
-def evaluate_generated_model(input: DiagramAccuracyRequest) -> DiagramAccuracyResponse:
-    """An independent model (Gemini or NVIDIA, not the generator) first translates the diagram back into text
-    without seeing the original description, then splits the original into requirements and judges each against that text.
-    The score is computed deterministically. Gemini without GEMINI_API_KEY falls back to Groq and the outline."""
-    outline = describe_process_model(input.model)
-    evaluator = input.evaluator
-    if evaluator == "gemini" and not GEMINI_API_KEY:
-        evaluator = "groq"
-    diagram_text = outline if evaluator == "groq" else diagram_to_text(input.model, outline, evaluator)
-    evaluation_prompt = f"""You compare the user's ORIGINAL DESCRIPTION with the CONTENT OF A PROCESS DIAGRAM.
-
-Procedure:
-1. Split the original description into 4 to 20 atomic requirements. Each one is a single verifiable thing that the description states EXPLICITLY. Categories:
-   - "step": an activity that has to be performed in the process,
-   - "actor": who performs a specific activity (only if the description says so),
-   - "decision": a decision/branching and its branches or conditions,
-   - "order": an important sequence (X follows Y),
-   - "outcome": how the process ends.
-   Do not invent requirements. Do not include obvious things (process start and end, time, costs, KPIs, visual layout).
-2. importance: 3 = core of the process, 2 = important detail, 1 = minor detail.
-3. For each requirement determine its status according to the diagram:
-   - "met": the diagram contains it (different wording or synonyms are fine; one step may cover several requirements and vice versa),
-   - "partial": only partially (the step exists but a different role performs it; the branch exists but without a condition; the order is slightly different),
-   - "missing": it is not in the diagram.
-   If a decision has no role but the directly preceding step is performed by the required role, treat the role as met.
-   evidence: briefly name the diagram step that proves it, or why it is missing.
-4. extra: at most 5 diagram steps that the description does not ask for and that are not a reasonable breakdown of a required step. They do not lower the score.
-5. summary: 1–2 sentences – what the diagram captured and what important part is missing.
-
-Respond in English and return only JSON:
-{{
-  "requirements": [{{"text": "...", "category": "step", "importance": 3, "status": "met", "evidence": "..."}}],
-  "extra": ["..."],
-  "summary": "..."
-}}
-
-ORIGINAL DESCRIPTION:
-{input.description}
-
-DIAGRAM (described as text):
-{diagram_text}
-"""
-    judge_system = "You evaluate process diagrams against requirements and return only valid JSON."
+def evaluator_json(evaluator: str, system_prompt: str, user_prompt: str, max_tokens: int = 16000) -> dict:
     if evaluator == "groq":
-        result = groq_json(judge_system, evaluation_prompt, max_tokens=3000)
-    else:
-        result = EVALUATORS[evaluator](judge_system, evaluation_prompt, max_tokens=8000)
+        return groq_json(system_prompt, user_prompt, max_tokens=min(max_tokens, 3000))
+    try:
+        return EVALUATORS[evaluator](system_prompt, user_prompt, max_tokens=max_tokens)
+    except HTTPException as exc:
+        if exc.status_code != 502:  # retry only an unusable answer (cut off, broken JSON), not rate limits or outages
+            raise
+        return EVALUATORS[evaluator](system_prompt, user_prompt, max_tokens=max_tokens)
 
-    requirements = []
-    for raw in result.get("requirements") or []:
-        if not isinstance(raw, dict) or not str(raw.get("text", "")).strip():
+
+def _words(text: str) -> List[str]:
+    return re.findall(r"[a-z0-9]+", _ascii(text))
+
+
+def quote_in_description(quote: str, description: str) -> bool:
+    """The quote has to come from the description: verbatim after normalisation, or at least 80 % of its words
+    (models sometimes drop a word or change punctuation when copying)."""
+    quote_words = _words(quote)
+    if not quote_words:
+        return False
+    description_words = _words(description)
+    if " ".join(quote_words) in " ".join(description_words):
+        return True
+    available = set(description_words)
+    return sum(w in available for w in quote_words) >= 0.8 * len(quote_words)
+
+
+REQUIREMENTS_PROMPT = """Split the PROCESS DESCRIPTION below into 4 to 20 atomic requirements that a diagram of this process has to satisfy.
+Each requirement is a single verifiable thing that the description states EXPLICITLY. Categories:
+- "step": an activity that has to be performed,
+- "actor": who performs a specific activity (only if the description names the performer),
+- "decision": a real branching with alternative outcomes ("if ... otherwise ...", "either ... or ..."); a time clause such as
+  "when the dough has risen, divide it" is NOT a decision, it is a step (or an order),
+- "order": a sequence that the description REQUIRES (see the rules below),
+- "outcome": how the process ends (an explicit result or end state).
+
+Rules:
+- Do not invent requirements. Skip obvious things (process start and end, time, costs, KPIs, visual layout).
+- Skip background and context that is not an activity of this process ("usually it is developed on a separate branch",
+  "we are a small bakery"), and the trigger that starts it ("once the feature is ready").
+- Skip implicit counterpart activities: when one party sends something, "the other party receives it" is not a separate step.
+- Skip "start X" / "finish X" / "finish work" when X is already a step or the phrase only marks the end of the process.
+- The description may be unstructured: sentences can come in any order and clarifications may be appended at the end.
+  Merge everything that is said about one activity into one requirement.
+- "order" ONLY when the text states it with words such as "after", "then", "before", "first", "once", "only when", "until",
+  AND the order is not already obvious from the steps themselves (no "test before deciding on the test result").
+  The order in which the sentences appear in the text is NOT an order requirement.
+  Example: "We bake the pies. Anna prepares the dough." gives no order requirement from the sentence order.
+- Use "actor" only when the performer is not already obvious from the step text; never create an actor requirement
+  that repeats a step requirement word for word.
+- quote: copy the words of the description that state the requirement VERBATIM, in the original language (a short fragment, at most about 20 words).
+  Leave out any double quote characters from the quote so the JSON stays valid.
+- text: the requirement, in English.
+- role: only for "actor" — the performer in English, as it would be written on a diagram lane.
+- importance: 3 = core of the process, 2 = important detail, 1 = minor detail.
+
+Return only JSON:
+{"requirements": [{"text": "...", "category": "step", "importance": 3, "quote": "...", "role": ""}]}
+
+PROCESS DESCRIPTION:
+"""
+
+
+def extract_requirements(description: str, evaluator: str) -> List[dict]:
+    """Splits the description into requirements. Requirements whose quote is not found in the description are dropped."""
+    result = evaluator_json(evaluator, "You extract verifiable requirements from process descriptions and return only valid JSON.",
+                            REQUIREMENTS_PROMPT + description, max_tokens=16000)
+    requirements, seen = [], set()
+    for raw in result.get("requirements") or result.get("_items") or []:
+        if not isinstance(raw, dict):
             continue
-        status_value = _ascii(raw.get("status"))
-        status_value = status_value if status_value in ACCURACY_STATUS_SCORE else "missing"
+        text, quote = str(raw.get("text") or "").strip(), str(raw.get("quote") or "").strip()
+        if not text or _ascii(text) in seen or not quote_in_description(quote, description):
+            continue
+        seen.add(_ascii(text))
         category = _ascii(raw.get("category"))
         try:
             importance = min(3, max(1, int(raw.get("importance", 2))))
         except (TypeError, ValueError):
             importance = 2
+        requirements.append({
+            "id": f"R{len(requirements) + 1}", "text": text, "quote": quote, "importance": importance,
+            "category": category if category in ACCURACY_CATEGORIES else "step",
+            "role": str(raw.get("role") or "").strip(),
+        })
+    if len(requirements) < 2:
+        raise HTTPException(status_code=502, detail="The AI did not find verifiable requirements in the description.")
+    return requirements
+
+
+def requirement_set_id(description: str, evaluator: str) -> str:
+    normalized = " ".join(description.split())
+    # The prompt is part of the key: a changed extraction prompt must not reuse lists made by the old one
+    prompt_version = hashlib.sha256(REQUIREMENTS_PROMPT.encode("utf-8")).hexdigest()[:8]
+    return hashlib.sha256(f"{evaluator}\n{prompt_version}\n{normalized}".encode("utf-8")).hexdigest()[:32]
+
+
+def load_requirement_set(set_id: str):
+    with get_db() as conn:
+        cursor = get_cursor(conn)
+        cursor.execute(f"SELECT requirements_json, ignored_json FROM requirement_sets WHERE set_id = {PARAM_MARKER}", (set_id,))
+        row = cursor.fetchone()
+    if not row:
+        return None
+    return json.loads(row["requirements_json"]), set(json.loads(row["ignored_json"]))
+
+
+def save_requirement_set(set_id: str, evaluator: str, requirements: List[dict]) -> None:
+    with get_db() as conn:
+        cursor = get_cursor(conn)
+        cursor.execute(
+            f"INSERT INTO requirement_sets (set_id, evaluator, requirements_json, ignored_json, created_at) "
+            f"VALUES ({PARAM_MARKER}, {PARAM_MARKER}, {PARAM_MARKER}, {PARAM_MARKER}, {PARAM_MARKER}) ON CONFLICT (set_id) DO NOTHING",
+            (set_id, evaluator, json.dumps(requirements, ensure_ascii=False), "[]", datetime.now(timezone.utc).isoformat()))
+
+
+def _reachable(outgoing: dict, source: str, target: str) -> bool:
+    stack, seen = [source], set()
+    while stack:
+        nid = stack.pop()
+        for nxt, _ in outgoing.get(nid, []):
+            if nxt == target:
+                return True
+            if nxt not in seen:
+                seen.add(nxt)
+                stack.append(nxt)
+    return False
+
+
+def check_requirement(requirement: dict, status: str, refs: List[int], flow) -> tuple:
+    """Checks the judge's verdict against the diagram structure. Returns (status, note).
+    The code can only lower a verdict, except for an order that the flow clearly confirms."""
+    by_id, outgoing, _, numbers = flow
+    node_of = {number: nid for nid, number in numbers.items()}
+    valid = [node_of[r] for r in refs if r in node_of]
+    category = requirement["category"]
+
+    if category == "order" and len(valid) >= 2:
+        # Both activities are in the diagram: the flow decides, not the judge
+        first, last = valid[0], valid[-1]
+        forward, backward = _reachable(outgoing, first, last), _reachable(outgoing, last, first)
+        if first == last:
+            return ("met" if status == "met" else "partial"), "both activities are in the same step"
+        if forward and not backward:
+            return "met", "order confirmed by the diagram flow"
+        if backward and not forward:
+            return "partial", "the diagram has the opposite order"
+        return ("partial" if status == "met" else status), "the order is not determined by the diagram flow"
+    if status == "missing":
+        return status, ""
+    if refs and not valid:
+        return "missing", "the referenced step does not exist in the diagram"
+    if not valid:
+        if category in ("step", "actor", "decision"):
+            return "partial", "no diagram step was named as evidence"
+        return status, ""
+
+    predecessors = {nid: [src for src, outs in outgoing.items() if any(t == nid for t, _ in outs)] for nid in valid}
+    if category == "actor":
+        # A decision without a role takes the role of the step before it
+        roles = [by_id[nid].get("actor") or next((by_id[p].get("actor") for p in predecessors[nid] if by_id[p].get("actor")), "")
+                 for nid in valid]
+        if not any(str(role or "").strip() for role in roles):
+            return "partial", "the step has no role in the diagram"
+    if category == "decision":
+        candidates = valid + [p for nid in valid for p in predecessors[nid]]
+        branching = [nid for nid in candidates if len(outgoing.get(nid, [])) > 1]
+        if not branching:
+            return "partial", "the referenced step does not branch in the diagram"
+        if status == "met" and not any(all(str(label or "").strip() for _, label in outgoing[nid]) for nid in branching):
+            return "partial", "the branches have no conditions"
+    return status, ""
+
+
+@app.post("/evaluate-model", response_model=DiagramAccuracyResponse)
+def evaluate_generated_model(input: DiagramAccuracyRequest) -> DiagramAccuracyResponse:
+    """An independent model (Gemini or NVIDIA, not the generator) evaluates the diagram in three steps:
+    1. the description is split into requirements (once per description, then cached, so the score is comparable),
+    2. the diagram is translated back into prose without seeing the description,
+    3. a judge marks each requirement and names the diagram steps that prove it; the code checks those references.
+    The score is computed deterministically. Gemini without GEMINI_API_KEY falls back to Groq and the outline."""
+    evaluator = input.evaluator
+    if evaluator == "gemini" and not GEMINI_API_KEY:
+        evaluator = "groq"
+
+    set_id = requirement_set_id(input.description, evaluator)
+    cached = load_requirement_set(set_id) if input.fixed_requirements else None
+    if cached:
+        base_requirements, ignored = cached
+    else:
+        base_requirements, ignored = extract_requirements(input.description, evaluator), set()
+        if input.fixed_requirements:
+            save_requirement_set(set_id, evaluator, base_requirements)
+
+    flow = process_flow(input.model)
+    outline = describe_process_model(input.model)
+    prose = "" if evaluator == "groq" else diagram_to_text(input.model, outline, evaluator)
+    requirement_lines = "\n".join(
+        f'{r["id"]} [{r["category"]}{", role: " + r["role"] if r.get("role") else ""}] {r["text"]}' for r in base_requirements)
+    prose_block = f"\n\nDIAGRAM PROSE (an independent reading of the same diagram):\n{prose}" if prose else ""
+    judge_prompt = f"""You check a PROCESS DIAGRAM against a fixed list of REQUIREMENTS taken from a process description.
+
+For EVERY requirement (use its id) decide the status:
+- "met": the diagram contains it (different wording or synonyms are fine; one step may cover several requirements and vice versa),
+- "partial": only partially (the step exists but a different role performs it; the branch exists but without a condition; the order is different),
+- "missing": it is not in the diagram.
+step_refs: the numbers of the diagram steps/decisions from the OUTLINE that prove it, e.g. [3] or [2, 5]. Required for "met" and "partial".
+  For "order" ALWAYS give the two steps that perform the two activities when both exist, whatever their order in the diagram:
+  the step of the activity that must come first, then the step of the activity that must come later. The order itself is checked by the app.
+  For "outcome" give the last step(s) before END.
+If a decision has no role but the directly preceding step is performed by the required role, the role is met.
+evidence: one short sentence naming the step(s), or why it is missing.
+The OUTLINE is the exact structure of the diagram. When it disagrees with the prose, trust the OUTLINE.
+extra: at most 5 diagram step labels that no requirement asks for and that are not a reasonable breakdown of a required step.
+summary: 1–2 sentences – what the diagram captured and what important part is missing.
+
+Respond in English and return only JSON:
+{{"results": [{{"id": "R1", "status": "met", "step_refs": [2], "evidence": "..."}}], "extra": ["..."], "summary": "..."}}
+
+REQUIREMENTS:
+{requirement_lines}
+
+DIAGRAM OUTLINE (numbered steps):
+{outline}{prose_block}
+"""
+    # Borderline requirements (one coarse step covering several fine ones) flip between runs, so a judge that is not
+    # deterministic votes several times; each requirement takes the median verdict (after the code check)
+    votes = JUDGE_VOTES.get(evaluator, 1)
+    judge_system = "You evaluate process diagrams against requirements and return only valid JSON."
+    if votes > 1:
+        with ThreadPoolExecutor(max_workers=votes) as pool:
+            futures = [pool.submit(evaluator_json, evaluator, judge_system, judge_prompt) for _ in range(votes)]
+        results, errors = [], []
+        for future in futures:
+            try:
+                results.append(future.result())
+            except HTTPException as exc:
+                errors.append(exc)
+        if not results:
+            raise errors[0]
+    else:
+        results = [evaluator_json(evaluator, judge_system, judge_prompt)]
+    result = results[0]
+
+    def verdict_of(judge_result: dict, base: dict) -> dict:
+        raw = next((r for r in judge_result.get("results") or judge_result.get("_items") or []
+                    if isinstance(r, dict) and str(r.get("id") or "").strip().upper() == base["id"].upper()), {})
+        status_value = _ascii(raw.get("status"))
+        status_value = status_value if status_value in ACCURACY_STATUS_SCORE else "missing"
+        refs = []
+        for value in raw.get("step_refs") or []:
+            match = re.search(r"\d+", str(value))
+            if match:
+                refs.append(int(match.group()))
+        checked, note = check_requirement(base, status_value, refs, flow)
+        evidence = str(raw.get("evidence") or "").strip() or ("" if raw else "The evaluator did not assess this requirement.")
+        return {"status": checked, "refs": refs, "evidence": evidence, "check": note if checked != status_value else ""}
+
+    requirements = []
+    for base in base_requirements:
+        candidates = sorted((verdict_of(r, base) for r in results), key=lambda v: ACCURACY_STATUS_RANK[v["status"]])
+        chosen = candidates[(len(candidates) - 1) // 2]  # median; with two votes the lower one
         requirements.append(AccuracyRequirement(
-            text=str(raw["text"]).strip(),
-            category=category if category in ACCURACY_CATEGORIES else "step",
-            importance=importance,
-            status=status_value,
-            evidence=str(raw.get("evidence") or "").strip(),
+            id=base["id"], text=base["text"], category=base["category"], importance=base["importance"], quote=base["quote"],
+            status=chosen["status"], evidence=chosen["evidence"], step_refs=chosen["refs"],
+            check=chosen["check"], ignored=base["id"] in ignored,
         ))
-    if not requirements:
-        raise HTTPException(status_code=502, detail="The AI returned no requirements to compare.")
+
+    scored = [r for r in requirements if not r.ignored]
 
     def weighted_score(items: List[AccuracyRequirement]) -> int:
         total = sum(r.importance for r in items)
         return round(100 * sum(r.importance * ACCURACY_STATUS_SCORE[r.status] for r in items) / total) if total else 0
 
     category_scores = {
-        category: weighted_score([r for r in requirements if r.category == category])
-        for category in sorted({r.category for r in requirements})
+        category: weighted_score([r for r in scored if r.category == category])
+        for category in sorted({r.category for r in scored})
     }
     return DiagramAccuracyResponse(
-        accuracy_percent=weighted_score(requirements),
-        diagram_prompt=diagram_text,
+        accuracy_percent=weighted_score(scored),
+        diagram_prompt=prose or outline,
         summary=str(result.get("summary") or "").strip(),
-        matches=[r.text for r in requirements if r.status == "met"],
-        missing=[r.text + (" (partially)" if r.status == "partial" else "") for r in requirements if r.status != "met"],
+        matches=[r.text for r in scored if r.status == "met"],
+        missing=[r.text + (" (partially)" if r.status == "partial" else "") for r in scored if r.status != "met"],
         extra=[str(x).strip() for x in (result.get("extra") or []) if str(x).strip()][:5],
         requirements=requirements,
         category_scores=category_scores,
         evaluator={"gemini": f"Gemini ({getattr(_gemini_last_model, 'name', GEMINI_MODEL)})", "nvidia": f"NVIDIA ({NVIDIA_MODEL})", "groq": f"Groq ({GROQ_MODEL})"}[evaluator],
+        requirement_set=set_id if input.fixed_requirements else "",
     )
+
+
+@app.post("/evaluate-model/ignore")
+def ignore_requirement(input: RequirementIgnoreRequest) -> dict:
+    """Marks a requirement of a cached set as "not a requirement" (or back); ignored requirements do not count in the score."""
+    with get_db() as conn:
+        cursor = get_cursor(conn)
+        cursor.execute(f"SELECT requirements_json, ignored_json FROM requirement_sets WHERE set_id = {PARAM_MARKER}", (input.requirement_set,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Unknown requirement set. Recalculate the match first.")
+        if input.requirement_id not in {r["id"] for r in json.loads(row["requirements_json"])}:
+            raise HTTPException(status_code=404, detail="Unknown requirement.")
+        ignored = set(json.loads(row["ignored_json"]))
+        if input.ignored:
+            ignored.add(input.requirement_id)
+        else:
+            ignored.discard(input.requirement_id)
+        cursor.execute(f"UPDATE requirement_sets SET ignored_json = {PARAM_MARKER} WHERE set_id = {PARAM_MARKER}",
+                       (json.dumps(sorted(ignored)), input.requirement_set))
+    return {"requirement_set": input.requirement_set, "ignored": sorted(ignored)}
 
 
 TOOL_KINDS = ["machine", "device", "tool", "software", "material"]

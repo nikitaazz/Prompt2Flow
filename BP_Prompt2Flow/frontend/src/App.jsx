@@ -754,6 +754,34 @@ async function evaluateGeneratedDiagram(description, model, evaluator = 'nvidia'
   return data;
 }
 
+async function setRequirementIgnored(requirementSet, requirementId, ignored) {
+  const response = await fetch(`${API}/evaluate-model/ignore`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requirement_set: requirementSet, requirement_id: requirementId, ignored }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || `Could not update the requirement (${response.status})`);
+  return data;
+}
+
+// Same formula as the backend: importance-weighted share, met = 1, partial = 0.5, ignored requirements left out
+const ACCURACY_STATUS_SCORE = { met: 1, partial: 0.5, missing: 0 };
+function weightedAccuracy(items) {
+  const total = items.reduce((sum, r) => sum + r.importance, 0);
+  return total ? Math.round((100 * items.reduce((sum, r) => sum + r.importance * (ACCURACY_STATUS_SCORE[r.status] ?? 0), 0)) / total) : 0;
+}
+
+function rescoreAccuracy(accuracy) {
+  const scored = (accuracy.requirements || []).filter((r) => !r.ignored);
+  const categories = [...new Set(scored.map((r) => r.category))].sort();
+  return {
+    ...accuracy,
+    accuracy_percent: weightedAccuracy(scored),
+    category_scores: Object.fromEntries(categories.map((c) => [c, weightedAccuracy(scored.filter((r) => r.category === c))])),
+  };
+}
+
 async function fetchProcessResources(description, model) {
   const response = await fetch(`${API}/process-resources`, {
     method: 'POST',
@@ -1169,6 +1197,20 @@ function App() {
       .then((result) => { if (accuracyRequestRef.current === requestId) { setDiagramAccuracy(result); setAccuracySignature(signature); } })
       .catch((error) => { if (accuracyRequestRef.current === requestId) setDiagramAccuracyError(error.message); })
       .finally(() => { if (accuracyRequestRef.current === requestId) setIsDiagramAccuracyLoading(false); });
+  };
+
+  // "Not a requirement": saved with the cached requirement list, the score is recomputed locally
+  const toggleRequirementIgnored = async (requirement) => {
+    if (!diagramAccuracy?.requirement_set || !requirement.id) return;
+    const ignored = !requirement.ignored;
+    try {
+      await setRequirementIgnored(diagramAccuracy.requirement_set, requirement.id, ignored);
+      setDiagramAccuracy((prev) => (prev && prev.requirement_set === diagramAccuracy.requirement_set
+        ? rescoreAccuracy({ ...prev, requirements: prev.requirements.map((r) => (r.id === requirement.id ? { ...r, ignored } : r)) })
+        : prev));
+    } catch (error) {
+      setDiagramAccuracyError(error.message);
+    }
   };
 
   const loadResources = (model, description, signature) => {
@@ -2768,6 +2810,7 @@ function App() {
             onChapterChange={setStatsChapter}
             onClose={() => setShowStatsModal(false)}
             workNodes={workNodes}
+            model={currentModel}
             resources={resources}
             onReloadResources={() => loadResources(currentModel, promptText, modelSignature)}
             advice={advice}
@@ -2781,6 +2824,7 @@ function App() {
             onAccuracyEvaluatorChange={(evaluator) => { setAccuracyEvaluator(evaluator); runAccuracyCheck(currentModel, promptText, structureSignature, evaluator); }}
             hasDescription={Boolean(promptText.trim())}
             onApplyAccuracyFix={editDiagramWithAI}
+            onToggleRequirementIgnored={toggleRequirementIgnored}
             isApplyingFix={isCopilotLoading}
           />
         </div>}

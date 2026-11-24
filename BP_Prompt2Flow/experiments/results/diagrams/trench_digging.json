@@ -1,0 +1,112 @@
+{
+  "nodes": [
+    {
+      "id": "start",
+      "type": "startEvent",
+      "label": "Assignment received",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t1",
+      "type": "task",
+      "label": "Change into work clothes",
+      "actor": "Worker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t2",
+      "type": "task",
+      "label": "Mark out path",
+      "actor": "Worker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t3",
+      "type": "task",
+      "label": "Dig trench",
+      "actor": "Worker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t4",
+      "type": "task",
+      "label": "Check digging",
+      "actor": "Worker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t5",
+      "type": "task",
+      "label": "Collect tools",
+      "actor": "Worker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t6",
+      "type": "task",
+      "label": "Change out of work clothes",
+      "actor": "Worker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "end",
+      "type": "endEvent",
+      "label": "Work completed",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "start",
+      "target": "t1",
+      "label": null
+    },
+    {
+      "id": "e2",
+      "source": "t1",
+      "target": "t2",
+      "label": null
+    },
+    {
+      "id": "e3",
+      "source": "t2",
+      "target": "t3",
+      "label": null
+    },
+    {
+      "id": "e4",
+      "source": "t3",
+      "target": "t4",
+      "label": null
+    },
+    {
+      "id": "e5",
+      "source": "t4",
+      "target": "t5",
+      "label": null
+    },
+    {
+      "id": "e6",
+      "source": "t5",
+      "target": "t6",
+      "label": null
+    },
+    {
+      "id": "e7",
+      "source": "t6",
+      "target": "end",
+      "label": null
+    }
+  ]
+}

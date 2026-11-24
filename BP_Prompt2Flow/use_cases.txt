@@ -347,17 +347,28 @@ Trigger: Diagram generation finishes or the user opens "Match with description".
 
 Main Success Scenario:
     1. System sends the description and the diagram to the AI Service.
-    2. AI Service splits the description into individual requirements.
-    3. AI Service evaluates each requirement as fulfilled, partially fulfilled or missing,
-       with a reference to the related diagram nodes.
-    4. System computes the matching percentage.
-    5. System shows the percentage and the breakdown.
-    6. User fixes missing requirements (UC-03 / UC-04) and re-runs the matching.
+    2. AI Service splits the description into individual requirements, each with a verbatim
+       quote from the description. System keeps only requirements whose quote is found in the
+       description and stores the list, so every later matching of the same description
+       uses the same requirements.
+    3. AI Service rewrites the diagram as prose without seeing the description.
+    4. AI Service evaluates each requirement as fulfilled, partially fulfilled or missing,
+       naming the numbered diagram steps that prove it.
+    5. System checks the named steps in the diagram (the step exists, it has a role, a decision
+       branches and its branches have conditions, an order is confirmed by the flow) and
+       lowers or confirms the verdict.
+    6. System computes the matching percentage.
+    7. System shows the percentage and the breakdown with the quoted text and the step numbers.
+    8. User fixes missing requirements (UC-03 / UC-04) and re-runs the matching.
 
 Extensions:
     1a. No description available (e.g. diagram opened from catalog without text):
         System informs the user that matching is not possible.
-    3a. AI Service error: System shows an error message.
+    2a. The requirements for this description are already stored: System reuses them.
+    4a. AI Service error: System shows an error message.
+    7a. The AI misread the description (e.g. treated the sentence order as a required order):
+        User marks the requirement as "Not a requirement". System stores the choice and
+        recomputes the percentage without it. User can count it again later.
 
 
 ---------------------------------------------------------------------
@@ -379,8 +390,12 @@ Trigger: User opens the "Statistics" view.
 
 Main Success Scenario:
     1. User opens the statistics view.
-    2. System computes total and per-step duration and cost from node KPIs.
-    3. System identifies the most time- and cost-intensive activities (bottlenecks).
+    2. System computes the duration of the process along its flow (parallel branches take as long
+       as the slowest one; decisions give a range from the fastest to the slowest run, in which a
+       loop is not repeated or repeated once), the total cost, the work time of all steps, and the
+       per-step duration and cost from node KPIs.
+    3. System identifies the most time- and cost-intensive activities and marks the steps on the
+       critical path (the slowest run), which determine the duration of the process (bottlenecks).
     4. System lists actors/specialists and resources/tools used in the process.
     5. System sends the process (steps, roles, KPIs, description) to the AI Service for
        improvement ideas.

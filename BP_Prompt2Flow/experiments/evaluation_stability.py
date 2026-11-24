@@ -116,6 +116,13 @@ def main() -> int:
     parser.add_argument("--max-nodes", type=int, default=14)
     parser.add_argument("--regenerate", action="store_true", help="generate the diagrams again")
     parser.add_argument("--no-variant", action="store_true", help="skip the minus_step variant")
+    parser.add_argument("--out", default="results",
+                        help="folder (next to this script) for runs and summaries; the diagrams are always cached in results/diagrams")
+    parser.add_argument("--fresh-requirements", action="store_true",
+                        help="extract the requirements again on every evaluation instead of reusing the cached list")
+    parser.add_argument("--append", action="store_true",
+                        help="keep earlier runs in runs.jsonl (e.g. to finish an interrupted experiment); "
+                             "the summaries are always built from the whole runs.jsonl")
     args = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # the Windows console is not UTF-8 by default
 
@@ -124,31 +131,33 @@ def main() -> int:
         wanted = set(args.only.split(","))
         cases = [c for c in cases if c["id"] in wanted]
     evaluators = [e.strip() for e in args.evaluators.split(",") if e.strip()]
-    out = HERE / "results"
+    out = HERE / args.out
     out.mkdir(exist_ok=True)
 
-    rows, removed_labels = [], {}
-    with open(out / "runs.jsonl", "w", encoding="utf-8") as raw_log:
+    with open(out / "runs.jsonl", "a" if args.append else "w", encoding="utf-8") as raw_log:
         for case in cases:
             print(f"[{case['id']}] generating / loading diagram")
             full = load_diagram(args.api, case, args.min_nodes, args.max_nodes, args.regenerate)
-            variants = {"full": full}
+            variants, removed_label = {"full": full}, ""
             if not args.no_variant:
                 reduced, label = remove_middle_step(full)
                 if reduced:
                     variants["minus_step"] = reduced
-                    removed_labels[case["id"]] = label
+                    removed_label = label
             for variant, model in variants.items():
                 for evaluator in evaluators:
                     for run in range(1, args.repeats + 1):
                         time.sleep(args.delay)
-                        row = {"case": case["id"], "variant": variant, "requested_evaluator": evaluator, "run": run}
+                        row = {"case": case["id"], "variant": variant, "requested_evaluator": evaluator, "run": run,
+                               "removed_step": removed_label if variant == "minus_step" else ""}
                         try:
                             result = post(args.api, "/evaluate-model", {"description": case["description"],
-                                                                         "model": model, "evaluator": evaluator})
+                                                                         "model": model, "evaluator": evaluator,
+                                                                         "fixed_requirements": not args.fresh_requirements}, timeout=900)
                         except Exception as exc:  # keep going: one failed call must not stop the experiment
                             row["error"] = str(exc)[:300]
-                            rows.append(row)
+                            raw_log.write(json.dumps(row, ensure_ascii=False) + "\n")
+                            raw_log.flush()
                             print(f"  {variant:10} {evaluator:7} run {run}: ERROR {row['error'][:120]}")
                             continue
                         reqs = result.get("requirements", [])
@@ -162,11 +171,19 @@ def main() -> int:
                             "missing": sum(r["status"] == "missing" for r in reqs),
                             **{f"cat_{c}": result.get("category_scores", {}).get(c, "") for c in CATEGORIES},
                         })
-                        rows.append(row)
                         raw_log.write(json.dumps({**row, "response": result}, ensure_ascii=False) + "\n")
                         raw_log.flush()
                         print(f"  {variant:10} {evaluator:7} run {run}: score {row['score']:3}  "
                               f"requirements {row['requirements']}")
+
+    rows, removed_labels = [], {}
+    for line in (out / "runs.jsonl").read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            row = json.loads(line)
+            row.pop("response", None)
+            rows.append(row)
+            if row.get("removed_step"):
+                removed_labels[row["case"]] = row["removed_step"]
 
     fields = ["case", "variant", "requested_evaluator", "evaluator", "run", "score", "requirements", "total_weight",
               "met", "partial", "missing", *[f"cat_{c}" for c in CATEGORIES], "error"]

@@ -1,0 +1,224 @@
+{
+  "nodes": [
+    {
+      "id": "start",
+      "type": "startEvent",
+      "label": "Start recipe",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t1",
+      "type": "task",
+      "label": "Gather tools (bowl, whisk, spoons, knife)",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t2",
+      "type": "task",
+      "label": "Gather ingredients",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t3",
+      "type": "task",
+      "label": "Crack eggs into bowl and add sugar and vanilla",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t4",
+      "type": "task",
+      "label": "Heat milk and add to bowl (partial)",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t5",
+      "type": "task",
+      "label": "Prepare half‑glass milk with sugar and yeast, heat 10 min, then add to mixture",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t6",
+      "type": "task",
+      "label": "Add pinch of salt and mix everything together",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t7",
+      "type": "task",
+      "label": "Measure, sift and gradually mix flour into dough",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t8",
+      "type": "task",
+      "label": "Add butter and knead until dough stops sticking to hands",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t9",
+      "type": "task",
+      "label": "Cover with towel and let rest for 1 hour",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t10",
+      "type": "task",
+      "label": "Cut apricots in half and remove pits",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t11",
+      "type": "task",
+      "label": "Divide dough, place apricot and a teaspoon of sugar, wrap and place on baking tray",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t12",
+      "type": "task",
+      "label": "Cover tray with baking paper and preheat oven to 180 °C",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t13",
+      "type": "task",
+      "label": "Beat egg, separate yolk, brush pies with yolk",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t14",
+      "type": "task",
+      "label": "Bake pies 20–40 min until golden brown",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "end",
+      "type": "endEvent",
+      "label": "Pies ready",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "start",
+      "target": "t1",
+      "label": null
+    },
+    {
+      "id": "e2",
+      "source": "t1",
+      "target": "t2",
+      "label": null
+    },
+    {
+      "id": "e3",
+      "source": "t2",
+      "target": "t3",
+      "label": null
+    },
+    {
+      "id": "e4",
+      "source": "t3",
+      "target": "t4",
+      "label": null
+    },
+    {
+      "id": "e5",
+      "source": "t4",
+      "target": "t5",
+      "label": null
+    },
+    {
+      "id": "e6",
+      "source": "t5",
+      "target": "t6",
+      "label": null
+    },
+    {
+      "id": "e7",
+      "source": "t6",
+      "target": "t7",
+      "label": null
+    },
+    {
+      "id": "e8",
+      "source": "t7",
+      "target": "t8",
+      "label": null
+    },
+    {
+      "id": "e9",
+      "source": "t8",
+      "target": "t9",
+      "label": null
+    },
+    {
+      "id": "e10",
+      "source": "t9",
+      "target": "t10",
+      "label": null
+    },
+    {
+      "id": "e11",
+      "source": "t10",
+      "target": "t11",
+      "label": null
+    },
+    {
+      "id": "e12",
+      "source": "t11",
+      "target": "t12",
+      "label": null
+    },
+    {
+      "id": "e13",
+      "source": "t12",
+      "target": "t13",
+      "label": null
+    },
+    {
+      "id": "e14",
+      "source": "t13",
+      "target": "t14",
+      "label": null
+    },
+    {
+      "id": "e15",
+      "source": "t14",
+      "target": "end",
+      "label": null
+    }
+  ]
+}

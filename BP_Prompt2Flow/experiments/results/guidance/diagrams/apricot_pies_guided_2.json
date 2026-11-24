@@ -1,0 +1,196 @@
+{
+  "nodes": [
+    {
+      "id": "start",
+      "type": "startEvent",
+      "label": "Baker decides to make the pastry",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t1",
+      "type": "task",
+      "label": "Take a bowl, whisk, two spoons, and a knife",
+      "actor": "Baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t2",
+      "type": "task",
+      "label": "Take the ingredients",
+      "actor": "Baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t3",
+      "type": "task",
+      "label": "Crack eggs into the bowl, add sugar and vanilla",
+      "actor": "Baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t4",
+      "type": "task",
+      "label": "Prepare milk mixture (heat milk, take half a glass, heat, add sugar and yeast, wait 10 minutes, pour into mixture)",
+      "actor": "Baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t5",
+      "type": "task",
+      "label": "Mix everything together and add a pinch of salt",
+      "actor": "Baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t6",
+      "type": "task",
+      "label": "Measure, sift, and gradually mix flour into the dough",
+      "actor": "Baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t7",
+      "type": "task",
+      "label": "Add butter and knead until dough stops sticking to hands",
+      "actor": "Baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t8",
+      "type": "task",
+      "label": "Cover dough with a towel and let rise for 1 hour",
+      "actor": "Baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t9",
+      "type": "task",
+      "label": "Cut apricots in half and remove pits",
+      "actor": "Baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t11",
+      "type": "task",
+      "label": "Cover baking tray with baking paper and turn on the oven",
+      "actor": "Baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t10",
+      "type": "task",
+      "label": "Portion dough, place apricot and a teaspoon of sugar inside, wrap, and put on the prepared baking tray",
+      "actor": "Baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t12",
+      "type": "task",
+      "label": "Brush pies with egg yolk and bake at 180°C for 20-40 minutes until golden brown",
+      "actor": "Baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "end",
+      "type": "endEvent",
+      "label": "Baked apricot pies",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "start",
+      "target": "t1",
+      "label": null
+    },
+    {
+      "id": "e2",
+      "source": "t1",
+      "target": "t2",
+      "label": null
+    },
+    {
+      "id": "e3",
+      "source": "t2",
+      "target": "t3",
+      "label": null
+    },
+    {
+      "id": "e4",
+      "source": "t3",
+      "target": "t4",
+      "label": null
+    },
+    {
+      "id": "e5",
+      "source": "t4",
+      "target": "t5",
+      "label": null
+    },
+    {
+      "id": "e6",
+      "source": "t5",
+      "target": "t6",
+      "label": null
+    },
+    {
+      "id": "e7",
+      "source": "t6",
+      "target": "t7",
+      "label": null
+    },
+    {
+      "id": "e8",
+      "source": "t7",
+      "target": "t8",
+      "label": null
+    },
+    {
+      "id": "e9",
+      "source": "t8",
+      "target": "t9",
+      "label": null
+    },
+    {
+      "id": "e10",
+      "source": "t9",
+      "target": "t11",
+      "label": null
+    },
+    {
+      "id": "e11",
+      "source": "t11",
+      "target": "t10",
+      "label": null
+    },
+    {
+      "id": "e12",
+      "source": "t10",
+      "target": "t12",
+      "label": null
+    },
+    {
+      "id": "e13",
+      "source": "t12",
+      "target": "end",
+      "label": null
+    }
+  ]
+}

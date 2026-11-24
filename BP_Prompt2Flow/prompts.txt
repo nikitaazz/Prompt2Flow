@@ -8,6 +8,23 @@ Request - build a business process model which describes deployment of the new f
 3a. Makes changes in case additional modifications are needed and updates the staging site (see #1)
 3b. Merges git branch into the main and pushes the new functionality to the production site, removes the git branch, notifies the client about successful deployment.
 
+technical_director:
+Business Processes in Autoclaved Aerated Concrete (AAC) Production
+Stage 1 — Raw Material Reception and Incoming Quality Control.
+The raw materials received include sand, gypsum, cement, quicklime, and aluminium paste.
+Stage 2 — Preparation of the Semi-Finished Product (Sand Slurry).
+For this purpose, river sand and gypsum are fed into a wet grinding mill, where they are ground, mixed with water, and transferred to storage tanks equipped with continuous mixing systems.
+Stage 3 — Raw Material Dosing and Mixing.
+The components to be dosed include sand slurry, recycled slurry, water, cement, lime, and aluminium paste. After dosing, all components are successively fed into a mixer, where they are thoroughly mixed. The resulting mixture is then poured into a casting mould.
+Stage 4 — Rising and Pre-Curing of the AAC Cake.
+During this stage, hydrogen is released as a result of a chemical reaction, causing the mixture to expand to approximately twice its original volume. During pre-curing, the cake gains sufficient strength to allow the mould to be dismantled and the cake to proceed to the cutting stage.
+Stage 5 — Cutting.
+The cake is cut horizontally and vertically to achieve the specified geometrical dimensions.
+Stage 6 — Thermal Treatment (Autoclaving).
+This stage takes place in autoclaves, where the cut cakes are loaded. The process begins with vacuuming, followed by the introduction of steam for thermal treatment. The pressure is then increased to 12 bar and the temperature rises to 200 °C. After the holding period, the pressure is gradually released. During this stage, the chemical reaction is completed, and the AAC products achieve their final strength.
+Stage 7 — Separation and Packaging.
+If necessary, the cake is separated into individual products. The finished products are then sorted and packaged on wooden pallets.
+
 regular_person:
 1. Take a bowl, a whisk, two spoons, and a knife. Take the ingredients. Crack the eggs into the bowl, add sugar and vanilla. Heat the milk and pour it in. Mix everything together. Don't pour in all the milk. Before that, take half a glass of milk, heat it, add sugar and yeast, and leave it for 10 minutes. Then pour this whole mixture into our mixture. Add a pinch of salt.
 Take the flour and measure how much we need. Sift the flour and gradually mix it into the dough. When the dough is almost kneaded, measure the butter and add it. Knead until it stops sticking to your hands.

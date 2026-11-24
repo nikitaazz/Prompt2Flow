@@ -1,0 +1,336 @@
+{
+  "nodes": [
+    {
+      "id": "start",
+      "type": "startEvent",
+      "label": "Baker decides to make the pastry",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t1",
+      "type": "task",
+      "label": "Take a bowl, a whisk, two spoons, and a knife",
+      "actor": "baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t2",
+      "type": "task",
+      "label": "Take the ingredients",
+      "actor": "baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t3",
+      "type": "task",
+      "label": "Crack the eggs into the bowl, add sugar and vanilla",
+      "actor": "baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t4",
+      "type": "task",
+      "label": "Heat the milk",
+      "actor": "baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t5",
+      "type": "task",
+      "label": "Take half a glass of milk, heat it, add sugar and yeast, and leave it for 10 minutes",
+      "actor": "baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t6",
+      "type": "task",
+      "label": "Pour this whole mixture into our mixture",
+      "actor": "baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t7",
+      "type": "task",
+      "label": "Mix everything together",
+      "actor": "baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t8",
+      "type": "task",
+      "label": "Add a pinch of salt",
+      "actor": "baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t9",
+      "type": "task",
+      "label": "Take the flour and measure how much we need",
+      "actor": "baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t10",
+      "type": "task",
+      "label": "Sift the flour and gradually mix it into the dough",
+      "actor": "baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t11",
+      "type": "task",
+      "label": "Measure the butter and add it",
+      "actor": "baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t12",
+      "type": "task",
+      "label": "Knead until it stops sticking to your hands",
+      "actor": "baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t13",
+      "type": "task",
+      "label": "Cover it with a towel and leave it for an hour",
+      "actor": "baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t14",
+      "type": "task",
+      "label": "Take the apricots, cut them in half, and remove the pits",
+      "actor": "baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t15",
+      "type": "task",
+      "label": "Wait for the dough to rise",
+      "actor": "baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t16",
+      "type": "task",
+      "label": "Divide the dough into individual portions",
+      "actor": "baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t17",
+      "type": "task",
+      "label": "Take a round piece of dough, put an apricot inside",
+      "actor": "baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t18",
+      "type": "task",
+      "label": "Add a teaspoon of sugar",
+      "actor": "baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t19",
+      "type": "task",
+      "label": "Wrap it up and put it on the baking tray",
+      "actor": "baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t20",
+      "type": "task",
+      "label": "Cover the baking tray with baking paper and turn on the oven",
+      "actor": "baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t21",
+      "type": "task",
+      "label": "Take one egg, put the yolk in a small plate and brush the pies with it",
+      "actor": "baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "t22",
+      "type": "task",
+      "label": "Put them in the oven for 20 to 40 minutes, until golden brown. Oven at 180 degrees",
+      "actor": "baker",
+      "duration_minutes": null,
+      "cost_euros": null
+    },
+    {
+      "id": "end",
+      "type": "endEvent",
+      "label": "Baked apricot pies",
+      "actor": null,
+      "duration_minutes": null,
+      "cost_euros": null
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "start",
+      "target": "t1",
+      "label": null
+    },
+    {
+      "id": "e2",
+      "source": "t1",
+      "target": "t2",
+      "label": null
+    },
+    {
+      "id": "e3",
+      "source": "t2",
+      "target": "t3",
+      "label": null
+    },
+    {
+      "id": "e4",
+      "source": "t3",
+      "target": "t4",
+      "label": null
+    },
+    {
+      "id": "e5",
+      "source": "t4",
+      "target": "t5",
+      "label": null
+    },
+    {
+      "id": "e6",
+      "source": "t5",
+      "target": "t6",
+      "label": null
+    },
+    {
+      "id": "e7",
+      "source": "t6",
+      "target": "t7",
+      "label": null
+    },
+    {
+      "id": "e8",
+      "source": "t7",
+      "target": "t8",
+      "label": null
+    },
+    {
+      "id": "e9",
+      "source": "t8",
+      "target": "t9",
+      "label": null
+    },
+    {
+      "id": "e10",
+      "source": "t9",
+      "target": "t10",
+      "label": null
+    },
+    {
+      "id": "e11",
+      "source": "t10",
+      "target": "t11",
+      "label": null
+    },
+    {
+      "id": "e12",
+      "source": "t11",
+      "target": "t12",
+      "label": null
+    },
+    {
+      "id": "e13",
+      "source": "t12",
+      "target": "t13",
+      "label": null
+    },
+    {
+      "id": "e14",
+      "source": "t13",
+      "target": "t14",
+      "label": null
+    },
+    {
+      "id": "e15",
+      "source": "t14",
+      "target": "t15",
+      "label": null
+    },
+    {
+      "id": "e16",
+      "source": "t15",
+      "target": "t16",
+      "label": null
+    },
+    {
+      "id": "e17",
+      "source": "t16",
+      "target": "t17",
+      "label": null
+    },
+    {
+      "id": "e18",
+      "source": "t17",
+      "target": "t18",
+      "label": null
+    },
+    {
+      "id": "e19",
+      "source": "t18",
+      "target": "t19",
+      "label": null
+    },
+    {
+      "id": "e20",
+      "source": "t19",
+      "target": "t20",
+      "label": null
+    },
+    {
+      "id": "e21",
+      "source": "t20",
+      "target": "t21",
+      "label": null
+    },
+    {
+      "id": "e22",
+      "source": "t21",
+      "target": "t22",
+      "label": null
+    },
+    {
+      "id": "e23",
+      "source": "t22",
+      "target": "end",
+      "label": null
+    }
+  ]
+}

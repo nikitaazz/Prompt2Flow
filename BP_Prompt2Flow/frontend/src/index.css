@@ -1348,6 +1348,12 @@ select.p2f-field { padding-right: 8px; cursor: pointer; }
 .p2f-panel__row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 .p2f-panel__row .p2f-panel__title { margin-bottom: 0; }
 .p2f-req-tools { display: flex; gap: 4px; }
+.p2f-req__quote { margin-top: 3px; color: var(--faint); font-size: 12px; font-style: italic; line-height: 1.45; }
+.p2f-req__refs { color: var(--accent-ink); font-weight: 500; }
+.p2f-req__ignore { padding: 0; border: 0; background: none; color: var(--faint); font: inherit; font-size: 11.5px; text-decoration: underline; cursor: pointer; }
+.p2f-req__ignore:hover { color: var(--ink); }
+.p2f-req.is-ignored .p2f-req__text, .p2f-req.is-ignored .p2f-status { opacity: .5; }
+.p2f-req.is-ignored .p2f-req__text { text-decoration: line-through; }
 .p2f-panel__row + .p2f-req-list { margin-top: 12px; }
 .p2f-extra-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .p2f-extra { display: flex; align-items: flex-start; gap: 8px; color: var(--ink-2); font-size: 13.5px; line-height: 1.5; cursor: pointer; }

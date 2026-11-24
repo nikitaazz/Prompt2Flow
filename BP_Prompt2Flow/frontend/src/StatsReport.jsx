@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 
 // ── Process statistics: a report split into chapters ─────────────
 
@@ -67,6 +67,112 @@ function summarizeProcessKpi(nodes, field) {
   };
 }
 
+// Duration of the process along its flow, unlike the plain sum of all steps:
+// - parallel branches (fork…join) take as long as the slowest branch;
+// - alternative branches (decisions) give a range from the fastest to the slowest way through the process;
+// - a loop (an edge back to an earlier step) is not repeated in the fastest run and repeated once in the slowest.
+// Returns { shortest, longest, criticalPath } – criticalPath holds the ids of the timed steps on the slowest way.
+function processDuration(model) {
+  const nodes = model?.nodes || [];
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const outgoing = new Map(nodes.map((node) => [node.id, []]));
+  const incoming = new Map(nodes.map((node) => [node.id, []]));
+  (model?.edges || []).forEach((edge) => {
+    if (!byId.has(edge.source) || !byId.has(edge.target)) return;
+    outgoing.get(edge.source).push(edge.target);
+    incoming.get(edge.target).push(edge.source);
+  });
+
+  // Depth-first search from the start: an edge to a node that is still open closes a loop.
+  const state = new Map();
+  const backEdges = new Set();
+  const finished = [];
+  const visit = (id) => {
+    state.set(id, 'open');
+    outgoing.get(id).forEach((target) => {
+      if (state.get(target) === 'open') backEdges.add(`${id}>${target}`);
+      else if (!state.has(target)) visit(target);
+    });
+    state.set(id, 'done');
+    finished.push(id);
+  };
+  const starts = nodes.filter((node) => node.type === 'startEvent' || incoming.get(node.id).length === 0);
+  starts.forEach((node) => { if (!state.has(node.id)) visit(node.id); });
+  const order = finished.reverse();
+  const isForward = (source, target) => !backEdges.has(`${source}>${target}`);
+
+  const startIds = new Set(starts.map((node) => node.id));
+  const durationOf = (id) => {
+    const value = Number(byId.get(id).duration_minutes);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  };
+
+  // Duration of one run of the process: every branch that runs takes part, a join waits for all of them,
+  // and at a decision listed in `choice` only the chosen branch runs. The run takes as long as its slowest way
+  // to an end; a run that only leads back into a loop never reaches an end and returns null.
+  const isEnd = (id) => byId.get(id).type === 'endEvent' || outgoing.get(id).length === 0;
+  const runDuration = (choice) => {
+    const finish = new Map();
+    let slowest = null;
+    order.forEach((id) => {
+      const before = incoming.get(id).filter((source) => isForward(source, id) && finish.has(source) && (!choice.has(source) || choice.get(source) === id));
+      if (!before.length && !startIds.has(id)) return; // not reached in this run
+      const previous = before.map((source) => finish.get(source)).reduce((best, item) => (item.time > best.time ? item : best), { time: 0, path: [] });
+      const own = durationOf(id);
+      const item = { time: previous.time + own, path: own > 0 ? [...previous.path, id] : previous.path };
+      finish.set(id, item);
+      if (isEnd(id) && (!slowest || item.time > slowest.time)) slowest = item;
+    });
+    return slowest ? { ...slowest, reached: finish } : null;
+  };
+
+  // One repetition of a loop (back edge from `source` to the earlier step `target`) takes the slowest way from target to source.
+  const repetitionTime = (target, source) => {
+    const finish = new Map([[target, durationOf(target)]]);
+    order.forEach((id) => {
+      if (id === target) return;
+      const before = incoming.get(id).filter((from) => isForward(from, id) && finish.has(from));
+      if (before.length) finish.set(id, Math.max(...before.map((from) => finish.get(from))) + durationOf(id));
+    });
+    return finish.get(source) ?? 0;
+  };
+
+  // The slowest run takes the slowest branch at every decision, which is the longest way through the whole graph,
+  // and repeats once every loop that starts in it.
+  const fullRun = runDuration(new Map());
+  if (!fullRun) return { shortest: 0, longest: 0, criticalPath: [] };
+  const loopTime = [...backEdges].reduce((total, edge) => {
+    const [source, target] = edge.split('>');
+    return fullRun.reached.has(target) ? total + repetitionTime(target, source) : total;
+  }, 0);
+  const longestRun = { time: fullRun.time + loopTime, path: fullRun.path };
+
+  // The fastest run is found by trying every combination of decision outcomes (diagrams have few decisions).
+  const decisions = order
+    .filter((id) => !['startEvent', 'endEvent', 'fork', 'join'].includes(byId.get(id).type))
+    .map((id) => ({ id, targets: outgoing.get(id).filter((target) => isForward(id, target)) }))
+    .filter((decision) => decision.targets.length > 1);
+  const combinations = decisions.reduce((count, decision) => count * decision.targets.length, 1);
+  let shortest = null;
+  if (combinations <= 4096) {
+    const choice = new Map();
+    const tryFrom = (index) => {
+      if (index === decisions.length) {
+        const run = runDuration(choice);
+        if (run && (shortest === null || run.time < shortest)) shortest = run.time;
+        return;
+      }
+      decisions[index].targets.forEach((target) => {
+        choice.set(decisions[index].id, target);
+        tryFrom(index + 1);
+      });
+    };
+    tryFrom(0);
+  }
+
+  return { shortest: shortest ?? longestRun.time, longest: longestRun.time, criticalPath: longestRun.path };
+}
+
 function KpiPieChart({ items, formatValue, label }) {
   const total = items.reduce((sum, item) => sum + item.value, 0);
   const nonZeroItems = items.filter((item) => item.value > 0);
@@ -118,8 +224,11 @@ function ShareBar({ value, tone }) {
 }
 
 // ── 01 Cost and time ──────────────────────────────────────────
-function FinanceChapter({ workNodes }) {
+function FinanceChapter({ workNodes, model }) {
   const durationStats = summarizeProcessKpi(workNodes, 'durationMinutes');
+  const flow = useMemo(() => processDuration(model), [model]);
+  const criticalSteps = new Set(flow.criticalPath);
+  const hasRange = flow.longest - flow.shortest > 1e-9;
   const costStats = summarizeProcessKpi(workNodes, 'costEuros');
   const steps = workNodes.filter((node) => !node.data?.isDecision || kpiValue(node, 'durationMinutes') !== null || kpiValue(node, 'costEuros') !== null);
   const shareField = costStats.sum > 0 ? 'costEuros' : 'durationMinutes';
@@ -128,9 +237,11 @@ function FinanceChapter({ workNodes }) {
 
   return <div className="p2f-report__stack">
     <div className="p2f-tiles">
-      <Tile tone="accent" label="Total time" value={durationStats.count ? formatStatisticDuration(durationStats.sum) : '—'} note={`estimated for ${durationStats.count} of ${stepCount} steps`} />
+      <Tile tone="accent" label="Process duration"
+        value={!durationStats.count ? '—' : hasRange ? `${formatStatisticDuration(flow.shortest)} – ${formatStatisticDuration(flow.longest)}` : formatStatisticDuration(flow.longest)}
+        note={!durationStats.count ? `estimated for 0 of ${stepCount} steps` : hasRange ? 'fastest – slowest run of the process' : `along the flow, ${durationStats.count} of ${stepCount} steps timed`} />
       <Tile tone="amber" label="Total cost" value={costStats.count ? formatStatisticCost(costStats.sum) : '—'} note={`estimated for ${costStats.count} of ${stepCount} steps`} />
-      <Tile label="Average per step" value={durationStats.count ? formatStatisticDuration(durationStats.average) : '—'} note={costStats.count ? `${formatStatisticCost(costStats.average)} per step` : 'costs are not filled in'} />
+      <Tile label="Work time of all steps" value={durationStats.count ? formatStatisticDuration(durationStats.sum) : '—'} note={durationStats.count ? `${formatStatisticDuration(durationStats.average)} per step on average` : 'times are not filled in'} />
       <Tile label="Most demanding step" isText value={(costStats.maximum || durationStats.maximum)?.label ?? '—'} note={costStats.maximum ? formatStatisticCost(costStats.maximum.value) : durationStats.maximum ? formatStatisticDuration(durationStats.maximum.value) : ''} />
     </div>
 
@@ -167,6 +278,7 @@ function FinanceChapter({ workNodes }) {
                   <span className="p2f-table__strong">{nodeLabel(node)}</span>
                   {isPriciest && <span className="p2f-tag" data-tone="amber">most expensive</span>}
                   {isSlowest && <span className="p2f-tag" data-tone="accent">longest</span>}
+                  {criticalSteps.has(node.id) && <span className="p2f-tag" title="On the slowest way through the process: making this step faster shortens the whole process">critical path</span>}
                 </td>
                 <td className="is-muted">{node.data?.actor || 'No role'}</td>
                 <td className="is-num">{duration === null ? '—' : formatStatisticDuration(duration)}</td>
@@ -178,7 +290,7 @@ function FinanceChapter({ workNodes }) {
         </table>
       </div>
     </section>
-    <p className="p2f-fineprint">Total time and cost are based on the filled-in step KPIs; with branching, data from all branches is included. This is an estimate, not a measurement of actual time.</p>
+    <p className="p2f-fineprint">Process duration follows the flow from start to end: parallel branches take as long as the slowest one, and decisions give a range from the fastest to the slowest run. The fastest run repeats no loop, the slowest repeats every loop once. Work time and total cost add up all steps, including every branch. All values are estimates based on the filled-in step KPIs, not measurements.</p>
   </div>;
 }
 
@@ -369,11 +481,16 @@ function buildFixPrompt(requirements, extras, note) {
   return lines.join('\n');
 }
 
-function MatchChapter({ accuracy, isLoading, error, isStale, onRecheck, hasDescription, evaluator, onEvaluatorChange, onApplyFix, isApplyingFix }) {
+function MatchChapter({ accuracy, isLoading, error, isStale, onRecheck, hasDescription, evaluator, onEvaluatorChange, onApplyFix, isApplyingFix, onToggleIgnored }) {
   const [picked, setPicked] = useState(() => new Set());
   const [note, setNote] = useState('');
-  // A new evaluation lists different requirements, so old ticks no longer apply
-  useEffect(() => { setPicked(new Set()); }, [accuracy]);
+  // A new evaluation gives new verdicts, so old ticks no longer apply (ignoring a requirement keeps them)
+  const evaluationKey = accuracy ? `${accuracy.requirement_set}|${accuracy.diagram_prompt}|${accuracy.summary}` : '';
+  const [pickedFor, setPickedFor] = useState(evaluationKey);
+  if (pickedFor !== evaluationKey) {
+    setPickedFor(evaluationKey);
+    setPicked(new Set());
+  }
 
   if (!hasDescription) {
     return <div className="p2f-report__stack"><p className="p2f-panel__empty">The diagram has no original process description, so there is nothing to compare it with. Describe the process in the "Create process" field and generate a diagram.</p></div>;
@@ -382,14 +499,15 @@ function MatchChapter({ accuracy, isLoading, error, isStale, onRecheck, hasDescr
   if (error && !accuracy) return <div className="p2f-report__stack"><EvaluatorSwitch value={evaluator} onChange={onEvaluatorChange} /><ErrorNote text={error} onRetry={onRecheck} /></div>;
   if (!accuracy) return <div className="p2f-report__stack"><Loading text="Preparing the comparison…" /></div>;
 
-  const requirements = [...(accuracy.requirements || [])].sort((a, b) => (STATUS_META[a.status]?.order ?? 0) - (STATUS_META[b.status]?.order ?? 0) || b.importance - a.importance);
-  const counts = requirements.reduce((acc, r) => ({ ...acc, [r.status]: (acc[r.status] || 0) + 1 }), {});
+  const requirements = [...(accuracy.requirements || [])].sort((a, b) => Number(Boolean(a.ignored)) - Number(Boolean(b.ignored)) || (STATUS_META[a.status]?.order ?? 0) - (STATUS_META[b.status]?.order ?? 0) || b.importance - a.importance);
+  const counts = requirements.reduce((acc, r) => (r.ignored ? acc : { ...acc, [r.status]: (acc[r.status] || 0) + 1 }), {});
+  const canIgnore = Boolean(onToggleIgnored && accuracy.requirement_set);
   const score = accuracy.accuracy_percent;
   const extras = accuracy.extra || [];
   const reqKey = (r, index) => `req:${index}:${r.text}`;
   const extraKey = (item, index) => `extra:${index}:${item}`;
   const toggle = (key) => setPicked((prev) => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; });
-  const unmetKeys = requirements.flatMap((r, i) => (r.status === 'met' ? [] : [reqKey(r, i)]));
+  const unmetKeys = requirements.flatMap((r, i) => (r.status === 'met' || r.ignored ? [] : [reqKey(r, i)]));
   const pickedReqs = requirements.filter((r, i) => picked.has(reqKey(r, i)));
   const pickedExtras = extras.filter((item, i) => picked.has(extraKey(item, i)));
   const canFix = Boolean(onApplyFix) && (pickedReqs.length > 0 || pickedExtras.length > 0 || note.trim().length > 0);
@@ -440,16 +558,21 @@ function MatchChapter({ accuracy, isLoading, error, isStale, onRecheck, hasDescr
         </div>}
       </div>
       <ul className="p2f-req-list">
-        {requirements.map((r, index) => <li key={`${r.text}-${index}`} className={`p2f-req${onApplyFix ? ' p2f-req--pickable' : ''}${picked.has(reqKey(r, index)) ? ' is-picked' : ''}`}>
-          {onApplyFix && <input type="checkbox" className="p2f-req__check" checked={picked.has(reqKey(r, index))} onChange={() => toggle(reqKey(r, index))} aria-label={`Fix: ${r.text}`} />}
-          <span className="p2f-status" data-tone={STATUS_META[r.status]?.tone}>{STATUS_META[r.status]?.label}</span>
+        {requirements.map((r, index) => <li key={`${r.id || r.text}-${index}`} className={`p2f-req${onApplyFix ? ' p2f-req--pickable' : ''}${picked.has(reqKey(r, index)) ? ' is-picked' : ''}${r.ignored ? ' is-ignored' : ''}`}>
+          {onApplyFix && <input type="checkbox" className="p2f-req__check" checked={picked.has(reqKey(r, index))} onChange={() => toggle(reqKey(r, index))} disabled={r.ignored} aria-label={`Fix: ${r.text}`} />}
+          <span className="p2f-status" data-tone={r.ignored ? undefined : STATUS_META[r.status]?.tone}>{r.ignored ? 'Ignored' : STATUS_META[r.status]?.label}</span>
           <div className="p2f-req__body">
             <div className="p2f-req__text">{r.text}</div>
-            {r.evidence && <div className="p2f-req__evidence">{r.evidence}</div>}
+            {(r.evidence || r.step_refs?.length > 0) && <div className="p2f-req__evidence">
+              {r.step_refs?.length > 0 && <span className="p2f-req__refs">{r.step_refs.length === 1 ? 'Step' : 'Steps'} {r.step_refs.join(', ')} · </span>}
+              {r.evidence}{r.check && ` (check: ${r.check})`}
+            </div>}
+            {r.quote && <div className="p2f-req__quote">From the description: “{r.quote}”</div>}
           </div>
           <span className="p2f-req__meta">
             <span>{CATEGORY_LABELS[r.category] || r.category}</span>
             <span className="p2f-importance" title={`Importance ${r.importance} of 3`}>{[1, 2, 3].map((i) => <i key={i} className={i <= r.importance ? 'is-on' : ''} />)}</span>
+            {canIgnore && r.id && <button type="button" className="p2f-req__ignore" onClick={() => onToggleIgnored(r)} title={r.ignored ? 'Count this requirement in the score again' : 'The evaluator misread the description: leave this out of the score'}>{r.ignored ? 'Count again' : 'Not a requirement'}</button>}
           </span>
         </li>)}
       </ul>
@@ -482,16 +605,16 @@ function MatchChapter({ accuracy, isLoading, error, isStale, onRecheck, hasDescr
       <pre className="p2f-outline">{accuracy.diagram_prompt}</pre>
     </details>
     {accuracy.evaluator && <p className="p2f-fineprint">Evaluated by {accuracy.evaluator}.</p>}
-    <p className="p2f-fineprint">The AI splits the original description into separate requirements (steps, actors, decisions, order, outcome) and checks each one in the diagram. The score is a weighted share: met = 1, partial = 0.5, missing = 0; weighted by importance 1–3. Extra steps do not lower the score.</p>
+    <p className="p2f-fineprint">The AI splits the original description into separate requirements (steps, actors, decisions, order, outcome) once and keeps the same list for every recalculation, so scores before and after an edit are comparable. Each requirement quotes the description. A judge then names the diagram steps that satisfy each requirement, and the app checks those steps in the diagram itself. The score is a weighted share: met = 1, partial = 0.5, missing = 0; weighted by importance 1–3. Ignored requirements and extra steps do not affect the score.</p>
   </div>;
 }
 
 export default function StatsReport({
-  chapter, onChapterChange, onClose, workNodes,
+  chapter, onChapterChange, onClose, workNodes, model,
   resources, onReloadResources,
   advice, onReloadAdvice,
   accuracy, isAccuracyLoading, accuracyError, isAccuracyStale, onRecheckAccuracy, hasDescription, accuracyEvaluator, onAccuracyEvaluatorChange,
-  onApplyAccuracyFix, isApplyingFix,
+  onApplyAccuracyFix, isApplyingFix, onToggleRequirementIgnored,
 }) {
   const actorCount = new Set(workNodes.map((node) => node.data?.actor || 'No role')).size;
   const decisionCount = workNodes.filter((node) => node.data?.isDecision).length;
@@ -520,10 +643,10 @@ export default function StatsReport({
 
       {/* key = chapter so a new chapter opens from the top */}
       <div key={chapter} className="p2f-report__body" role="tabpanel">
-        {chapter === 'finance' && <FinanceChapter workNodes={workNodes} />}
+        {chapter === 'finance' && <FinanceChapter workNodes={workNodes} model={model} />}
         {chapter === 'resources' && <ResourcesChapter workNodes={workNodes} resources={resources} onReload={onReloadResources} />}
         {chapter === 'advice' && <AdviceChapter workNodes={workNodes} advice={advice} onReload={onReloadAdvice} />}
-        {chapter === 'match' && <MatchChapter accuracy={accuracy} isLoading={isAccuracyLoading} error={accuracyError} isStale={isAccuracyStale} onRecheck={onRecheckAccuracy} hasDescription={hasDescription} evaluator={accuracyEvaluator} onEvaluatorChange={onAccuracyEvaluatorChange} onApplyFix={onApplyAccuracyFix} isApplyingFix={isApplyingFix} />}
+        {chapter === 'match' && <MatchChapter accuracy={accuracy} isLoading={isAccuracyLoading} error={accuracyError} isStale={isAccuracyStale} onRecheck={onRecheckAccuracy} hasDescription={hasDescription} evaluator={accuracyEvaluator} onEvaluatorChange={onAccuracyEvaluatorChange} onApplyFix={onApplyAccuracyFix} isApplyingFix={isApplyingFix} onToggleIgnored={onToggleRequirementIgnored} />}
       </div>
     </section>
   );
